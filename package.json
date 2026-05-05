@@ -1,0 +1,17 @@
+{
+  "name": "pr-bot",
+  "version": "0.1.0",
+  "private": true,
+  "description": "GitHub Probot App",
+  "type": "module",
+  "scripts": {
+    "start": "probot run ./app.js",
+    "dev": "probot run ./app.js"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "probot": "^13.4.0"
+  }
+}
