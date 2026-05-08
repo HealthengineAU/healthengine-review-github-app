@@ -66,6 +66,7 @@ async function updateAIReviewStatus(octokit, { owner, repo, pull_number, sha }) 
 
 export default (app) => {
   app.on([
+    "issue_comment.created",
     "pull_request_review_comment.created",
     "pull_request_review_thread.resolved",
     "pull_request_review.submitted",
