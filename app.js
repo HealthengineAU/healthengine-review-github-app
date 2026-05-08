@@ -66,7 +66,6 @@ async function updateAIReviewStatus(octokit, { owner, repo, pull_number, sha }) 
 
 export default (app) => {
   app.on([
-    "issue_comment.created",
     "pull_request_review_comment.created",
     "pull_request_review_thread.resolved",
     "pull_request_review.submitted",
@@ -75,6 +74,27 @@ export default (app) => {
   ], async (context) => {
     const { owner, repo } = context.repo();
     const pr = context.payload.pull_request;
+
+    await updateAIReviewStatus(context.octokit, {
+      owner,
+      repo,
+      pull_number: pr.number,
+      sha: pr.head.sha,
+    });
+  });
+
+  app.on("issue_comment.created", async (context) => {
+    const { issue } = context.payload;
+    if (!issue.pull_request) {
+      return;
+    }
+
+    const { owner, repo } = context.repo();
+    const { data: pr } = await context.octokit.rest.pulls.get({
+      owner,
+      repo,
+      pull_number: issue.number,
+    });
 
     await updateAIReviewStatus(context.octokit, {
       owner,
