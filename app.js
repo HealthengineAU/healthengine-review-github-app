@@ -66,9 +66,11 @@ async function updateAIReviewStatus(octokit, { owner, repo, pull_number, sha }) 
 
 export default (app) => {
   app.on([
+    "pull_request_review_comment.created",
+    "pull_request_review_thread.resolved",
+    "pull_request_review.submitted",
     "pull_request.reopened",
     "pull_request.synchronize",
-    "pull_request_review.submitted",
   ], async (context) => {
     const { owner, repo } = context.repo();
     const pr = context.payload.pull_request;
