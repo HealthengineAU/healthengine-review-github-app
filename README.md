@@ -11,14 +11,12 @@
 
 ```sh
 cp .env.example .env
-
 npm install
-
-npm run dev
+npm run start
 ```
 
 ## Deployment
 
 - Configured as a GitHub App
 - Deploys as free-tier [Render (Web Service)](https://dashboard.render.com/) following [the GitHub Probot docs](https://probot.github.io/docs/deployment/#render)
-- Auto-deploy on commits to `main`
+- If Render GitHub App is installed, will auto-deploy from `main`
