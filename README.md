@@ -3,7 +3,8 @@
 ## What it does
 
 - Adds a commit status once a pull request has requested AI reviews
-- Managed bot review comments
+  - Can be skipped with "skip-ai-review" label
+- Manages bot review comments (removing dead links)
 
 ## Local setup
 
