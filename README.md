@@ -2,7 +2,8 @@
 
 ## What it does
 
-- Adds a commit status once a pull request has AI reviews
+- Adds a commit status once a pull request has requested AI reviews
+- Managed bot review comments
 
 ## Local setup
 
