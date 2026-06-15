@@ -1,7 +1,9 @@
 import { register as registerAIReviewCommitStatus } from "./lib/ai-review-commit-status.js";
-import { register as registerStripAugmentLinks } from "./lib/strip-augment-links.js";
+import { register as registerCleanAiReviewComments } from "./lib/clean-ai-review-comments.js";
+import { register as registerTriggerAiReview } from "./lib/trigger-ai-review.js";
 
 export default (app) => {
   registerAIReviewCommitStatus(app);
-  registerStripAugmentLinks(app);
+  registerCleanAiReviewComments(app);
+  registerTriggerAiReview(app);
 };

@@ -1,10 +1,39 @@
-# GitHub Probot App
+# github-bot-ai-reviewed-prs
 
 ## What it does
 
 - Adds a commit status once a pull request has requested AI reviews
   - Can be skipped with "skip-ai-review" label
 - Manages bot review comments (removing dead links)
+- Summons AI reviewers from PR comments, labels, or team review requests,
+  gated by the providers enabled in `.github-bot-ai-reviewed-prs.yml`
+
+## Configuration
+
+Create `.github/.github-bot-ai-reviewed-prs.yml` to control which AI review providers are
+enabled. Supported providers: `augment`, `claude`, `copilot`, `greptile`,
+`linearb`.
+
+```yml
+providers:
+  - augment
+  - claude
+  - copilot
+  - greptile
+  - linearb
+```
+
+Resolution order (handled by Probot):
+
+1. `.github/.github-bot-ai-reviewed-prs.yml` in the PR's repo (read from the default branch only)
+2. otherwise `.github/.github-bot-ai-reviewed-prs.yml` in the organization's `.github` repository
+3. otherwise all providers are enabled (default)
+
+Config files may also use `_extends: <repo>` to inherit from another repo.
+
+Summoning a provider that isn't enabled (e.g. commenting "copilot please" when
+`copilot` isn't listed) posts a notice instead of triggering a review. The
+random reviewer only picks from enabled providers.
 
 ## Local setup
 
