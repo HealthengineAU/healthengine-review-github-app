@@ -1,20 +1,32 @@
-# github-bot-ai-reviewed-prs
+# Healthengine Review GitHub App
 
-## What it does
+<div align=right>
 
-- Adds a commit status once a pull request has requested AI reviews
-  - Can be skipped with "skip-ai-review" label
-- Manages bot review comments (removing dead links)
-- Summons AI reviewers from PR comments, labels, or team review requests,
-  gated by the providers enabled in `.github-bot-ai-reviewed-prs.yml`
+⚙️ [Config](https://github.com/HealthengineAU/.github/blob/main/.github/healthengine-review.yml)
+| 📲 [GitHub App](https://github.com/organizations/HealthengineAU/settings/apps/healthengine-review)
 
-## Configuration
+</div>
 
-Create `.github/.github-bot-ai-reviewed-prs.yml` to control which AI review providers are
-enabled. Supported providers: `augment`, `claude`, `copilot`, `greptile`,
-`linearb`.
+## Features
+
+- Manages the `AI Review` commit status:
+  - Added once a pull request has requested/received AI review
+  - Tracks whether AI feedback has been addressed (i.e. resolved, responded to, is now outdated)
+  - Can be skipped with `skip-ai-review` label
+- Triggers AI reviews:
+  - Commenting `ai review` (or `<provider> review` for a specific bot)
+  - Requesting review from teams named `HealthengineAU/AI Review` or `HealthengineAU/<provider>`
+  - Labelling a pull request with `ai-review` label
+- Cleans up AI reviewer comments:
+  - Removing links to unsupported features
+  - Collapses summaries
+
+## Config file
+
+Use the [.github/healthengine-review.yml](https://github.com/HealthengineAU/.github/blob/main/.github/healthengine-review.yml) file in the organization's special `.github` repo to configure settings for all repos:
 
 ```yml
+# supported: augment, claude, copilot, greptile, linearb
 providers:
   - augment
   - claude
@@ -22,32 +34,3 @@ providers:
   - greptile
   - linearb
 ```
-
-Resolution order (handled by Probot):
-
-1. `.github/.github-bot-ai-reviewed-prs.yml` in the PR's repo (read from the default branch only)
-2. otherwise `.github/.github-bot-ai-reviewed-prs.yml` in the organization's `.github` repository
-3. otherwise all providers are enabled (default)
-
-Config files may also use `_extends: <repo>` to inherit from another repo.
-
-Summoning a provider that isn't enabled (e.g. commenting "copilot please" when
-`copilot` isn't listed) posts a notice instead of triggering a review. The
-random reviewer only picks from enabled providers.
-
-## Local setup
-
-1. Create a GitHub App in GitHub, and install it on repositories.
-2. Make an `.env` and set up your app credentials.
-
-```sh
-cp .env.example .env
-npm install
-npm run start
-```
-
-## Deployment
-
-- Configured as a GitHub App
-- Deploys as free-tier [Render (Web Service)](https://dashboard.render.com/) following [the GitHub Probot docs](https://probot.github.io/docs/deployment/#render)
-- If Render GitHub App is installed, will auto-deploy from `main`
