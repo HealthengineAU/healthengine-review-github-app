@@ -25,6 +25,6 @@ steps:
 
   - label: ':warning: Rollback $DEPLOY_CLUSTER'
     <<: *common_options
-    command: deploy-helm.sh --namespace github-bot-ai-reviewed-prs --rollback $$BUILDKITE_AGENT_META_DATA_CLUSTER github-bot-ai-reviewed-prs
+    command: deploy-helm.sh --namespace healthengine-review-github-app --rollback $$BUILDKITE_AGENT_META_DATA_CLUSTER healthengine-review-github-app
     plugins:
       - thedyrt/skip-checkout#v0.1.1: ~

@@ -2,7 +2,7 @@
 ---
 
 # Default-branch (main) builds are pushed to the `-prod` ECR repository.
-image: 759931498410.dkr.ecr.ap-southeast-2.amazonaws.com/github-bot-ai-reviewed-prs{{ if hasPrefix "main" $image_tag }}-prod{{ end }}
+image: 759931498410.dkr.ecr.ap-southeast-2.amazonaws.com/healthengine-review-github-app{{ if hasPrefix "main" $image_tag }}-prod{{ end }}
 
 imageTag: {{ $image_tag }}
 
@@ -15,13 +15,13 @@ ingress:
   annotations:
     cert-manager.io/cluster-issuer: letsencrypt-prod
   hosts:
-    - github-bot-ai-reviewed-prs.{{ requiredEnv "PUBLIC_DOMAIN" }}
+    - healthengine-review-github-app.{{ requiredEnv "PUBLIC_DOMAIN" }}
   tls:
     - hosts:
-        - github-bot-ai-reviewed-prs.{{ requiredEnv "PUBLIC_DOMAIN" }}
-      secretName: github-bot-ai-reviewed-prs-tls
+        - healthengine-review-github-app.{{ requiredEnv "PUBLIC_DOMAIN" }}
+      secretName: healthengine-review-github-app-tls
 
-# Injected by chamber at deploy time from SSM /helm/<cluster>/github-bot-ai-reviewed-prs/*
+# Injected by chamber at deploy time from SSM /helm/<cluster>/healthengine-review-github-app/*
 secrets:
   APP_ID: {{ requiredEnv "APP_ID" | quote }}
   PRIVATE_KEY: {{ requiredEnv "PRIVATE_KEY" | quote }}

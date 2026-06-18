@@ -1,19 +1,15 @@
-# This is a YAML-formatted file.
-# Declare variables to be passed into your templates.
-
 affinity: {}
 
 containerPort: 3000
 
 deploymentLabels: {}
 
-# Non-secret environment variables passed to the container.
 env:
   HOST: "0.0.0.0"
   PORT: "3000"
   LOG_LEVEL: info
 
-image: 759931498410.dkr.ecr.ap-southeast-2.amazonaws.com/github-bot-ai-reviewed-prs
+image: 759931498410.dkr.ecr.ap-southeast-2.amazonaws.com/healthengine-review-github-app
 imagePullSecrets: []
 imageTag: main
 
@@ -39,8 +35,6 @@ resources:
     cpu: 25m
     memory: 64Mi
 
-# Secret environment variables. Rendered into a Secret and loaded via envFrom.
-# Populated at deploy time from SSM by helm/vars/values.yaml.gotmpl.
 secrets: {}
 
 securityContext:

@@ -10,11 +10,11 @@ helmDefaults:
   timeout: {{ env "HELM_TIMEOUT" | default "600" }}
 
 releases:
-  - name: github-bot-ai-reviewed-prs
-    chart: ./helm/chart/github-bot-ai-reviewed-prs
+  - name: healthengine-review-github-app
+    chart: ./helm/chart/healthengine-review-github-app
     labels:
-      app: github-bot-ai-reviewed-prs
+      app: healthengine-review-github-app
     missingFileHandler: Info
-    namespace: {{ env "RELEASE_NAMESPACE" | default "github-bot-ai-reviewed-prs" }}
+    namespace: {{ env "RELEASE_NAMESPACE" | default "healthengine-review-github-app" }}
     values:
       - helm/vars/values.yaml.gotmpl
