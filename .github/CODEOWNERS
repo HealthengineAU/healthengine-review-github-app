@@ -1,0 +1,9 @@
+# Infrastructure / deployment configuration is owned by SRE.
+*Dockerfile* @HealthengineAU/sre
+/.buildkite/ @HealthengineAU/sre
+/.dockerignore @HealthengineAU/sre
+/.github/ @HealthengineAU/sre
+/docker-compose.yml @HealthengineAU/sre
+/helm/ @HealthengineAU/sre
+/helmfile.yaml* @HealthengineAU/sre
+/tools/ @HealthengineAU/sre

@@ -1,0 +1,60 @@
+# This is a YAML-formatted file.
+# Declare variables to be passed into your templates.
+
+affinity: {}
+
+containerPort: 3000
+
+deploymentLabels: {}
+
+# Non-secret environment variables passed to the container.
+env:
+  HOST: "0.0.0.0"
+  PORT: "3000"
+  LOG_LEVEL: info
+
+image: 759931498410.dkr.ecr.ap-southeast-2.amazonaws.com/github-bot-ai-reviewed-prs
+imagePullSecrets: []
+imageTag: main
+
+ingress:
+  enabled: true
+  annotations: {}
+  hosts: []
+  ingressClassName: traefik
+  path: /
+  tls: []
+
+podAnnotations: {}
+
+# HTTP path served by Probot's built-in health check.
+probePath: /ping
+
+replicaCount: 2
+
+resources:
+  limits:
+    memory: 128Mi
+  requests:
+    cpu: 25m
+    memory: 64Mi
+
+# Secret environment variables. Rendered into a Secret and loaded via envFrom.
+# Populated at deploy time from SSM by helm/vars/values.yaml.gotmpl.
+secrets: {}
+
+securityContext:
+  allowPrivilegeEscalation: false
+  capabilities:
+    drop:
+      - ALL
+  privileged: false
+  runAsGroup: 1000
+  runAsNonRoot: true
+  runAsUser: 1000
+
+service:
+  annotations:
+    service.kubernetes.io/topology-mode: auto
+  port: 3000
+  type: ClusterIP

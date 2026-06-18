@@ -1,0 +1,7 @@
+services:
+  release-amd64: &release
+    build:
+      context: .
+      target: release
+  release-arm64:
+    <<: *release

@@ -1,0 +1,20 @@
+---
+environments:
+  prod:
+
+---
+helmDefaults:
+  atomic: true
+  cleanupOnFail: true
+  createNamespace: false
+  timeout: {{ env "HELM_TIMEOUT" | default "600" }}
+
+releases:
+  - name: github-bot-ai-reviewed-prs
+    chart: ./helm/chart/github-bot-ai-reviewed-prs
+    labels:
+      app: github-bot-ai-reviewed-prs
+    missingFileHandler: Info
+    namespace: {{ env "RELEASE_NAMESPACE" | default "github-bot-ai-reviewed-prs" }}
+    values:
+      - helm/vars/values.yaml.gotmpl

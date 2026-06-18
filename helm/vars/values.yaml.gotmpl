@@ -1,0 +1,28 @@
+{{- $image_tag := coalesce (env "DOCKER_BUILD_TAG") (env "DOCKER_IMAGE_TAG") "main" }}
+---
+
+# Default-branch (main) builds are pushed to the `-prod` ECR repository.
+image: 759931498410.dkr.ecr.ap-southeast-2.amazonaws.com/github-bot-ai-reviewed-prs{{ if hasPrefix "main" $image_tag }}-prod{{ end }}
+
+imageTag: {{ $image_tag }}
+
+replicaCount: {{ env "REPLICA_COUNT" | default "2" }}
+
+ingress:
+  # cert-manager issues a public TLS cert for the host via the letsencrypt-prod
+  # ClusterIssuer (Route53 DNS-01). Remove if the cluster's default wildcard cert
+  # already covers PUBLIC_DOMAIN (the adminer pattern).
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+  hosts:
+    - github-bot-ai-reviewed-prs.{{ requiredEnv "PUBLIC_DOMAIN" }}
+  tls:
+    - hosts:
+        - github-bot-ai-reviewed-prs.{{ requiredEnv "PUBLIC_DOMAIN" }}
+      secretName: github-bot-ai-reviewed-prs-tls
+
+# Injected by chamber at deploy time from SSM /helm/<cluster>/github-bot-ai-reviewed-prs/*
+secrets:
+  APP_ID: {{ requiredEnv "APP_ID" | quote }}
+  PRIVATE_KEY: {{ requiredEnv "PRIVATE_KEY" | quote }}
+  WEBHOOK_SECRET: {{ requiredEnv "WEBHOOK_SECRET" | quote }}

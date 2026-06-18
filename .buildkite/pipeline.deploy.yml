@@ -1,0 +1,30 @@
+common_options: &common_options
+  agents:
+    queue: $DEPLOY_CLUSTER
+  branches: '$DEPLOY_BRANCHES'
+  concurrency: 1
+  concurrency_group: $BUILDKITE_PIPELINE_SLUG/deploy-$DEPLOY_CLUSTER
+  retry:
+    manual:
+      permit_on_passed: true
+
+steps:
+  - label: ':rocket: Deploy $DEPLOY_CLUSTER'
+    <<: *common_options
+    command: tools/deploy-and-test.sh
+    plugins:
+      - sparse-checkout#v1.8.0:
+          no_cone: true
+          paths:
+            - helm*
+            - tools
+
+  - block: ':no_entry: Rollback failed release'
+    branches: '$DEPLOY_BRANCHES'
+    prompt: Are you sure you want to rollback?
+
+  - label: ':warning: Rollback $DEPLOY_CLUSTER'
+    <<: *common_options
+    command: deploy-helm.sh --namespace github-bot-ai-reviewed-prs --rollback $$BUILDKITE_AGENT_META_DATA_CLUSTER github-bot-ai-reviewed-prs
+    plugins:
+      - thedyrt/skip-checkout#v0.1.1: ~

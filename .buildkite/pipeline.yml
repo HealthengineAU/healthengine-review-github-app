@@ -1,0 +1,85 @@
+env:
+  DOCKER_BUILD_TAG: $BRANCH_SLUG-$BUILDKITE_BUILD_NUMBER
+
+steps:
+  - label: ':docker: Build and push image ({{matrix}})'
+    agents:
+      queue: build-4cpu-8mem-{{matrix}}
+    env:
+      BUILDX_NO_DEFAULT_ATTESTATIONS: 1
+      DOCKER_DEFAULT_PLATFORM: linux/{{matrix}}
+    key: build-architectures
+    matrix:
+      - amd64
+      - arm64
+    plugins:
+      - docker-compose#v5.12.1:
+          build: release-{{matrix}}
+          collapse-logs: true
+          progress: plain
+          push:
+            - release-{{matrix}}:$ECR_REPO_URI:$BRANCH_SLUG-{{matrix}}-$BUILDKITE_BUILD_NUMBER
+          quiet-push: true
+      - ecr#v2.12.0: ~
+
+  - label: ':docker: Generate manifest list + push'
+    agents:
+      queue: build
+    command:
+      - docker-manifest-list.sh
+         --dst-tags "$BRANCH_SLUG"
+         --dst-tags "$DOCKER_BUILD_TAG"
+         --registry "$ECR_REPO_URI"
+         --src-tags "$BRANCH_SLUG-amd64-$BUILDKITE_BUILD_NUMBER"
+         --src-tags "$BRANCH_SLUG-arm64-$BUILDKITE_BUILD_NUMBER"
+    depends_on: build-architectures
+    key: build-image
+    plugins:
+      - ecr#v2.12.0: ~
+      - thedyrt/skip-checkout#v0.1.1: ~
+
+  - label: ':mag: Vulnerability Scanning'
+    agents:
+      queue: prod1
+    command: scan.sh --no-annotate
+    depends_on: build-image
+    env:
+      ECR_REPO_URL: $ECR_REPO_URI
+
+  - group: ':k8s: Prod deployments'
+    depends_on: build-image
+    if: build.branch == "main"
+    key: prod-deploys
+    steps:
+      - label: ':buildkite: Start of concurrency gate for prod deployment'
+        agents:
+          queue: build
+        command: echo "Start concurrency gate for prod deployment"
+        concurrency: 1
+        concurrency_group: $BUILDKITE_PIPELINE_SLUG/gate-prod-deployment
+        key: start-gate-prod
+
+      - label: ':buildkite: Generate prod deployment triggers'
+        agents:
+          queue: build
+        command: >-
+          bk_trigger_deploy.py
+          --environment prod
+          --env-var "DEPLOY_BRANCHES: main"
+          --env-var "DOCKER_BUILD_TAG: $DOCKER_BUILD_TAG"
+          --group ':k8s: Prod deployments'
+          $BUILDKITE_PIPELINE_SLUG-deploy
+          | buildkite-agent pipeline upload
+        depends_on: start-gate-prod
+        key: generate-prod-deploy
+        plugins:
+          - thedyrt/skip-checkout#v0.1.1: ~
+
+      - wait
+
+      - label: ':buildkite: End of concurrency gate for prod deployment'
+        agents:
+          queue: build
+        command: echo "End concurrency gate for prod deployment"
+        concurrency: 1
+        concurrency_group: $BUILDKITE_PIPELINE_SLUG/gate-prod-deployment

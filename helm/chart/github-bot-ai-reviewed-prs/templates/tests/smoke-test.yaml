@@ -1,0 +1,30 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: {{ template "ghbot.fullname" . }}-test
+  labels:
+    app: {{ template "ghbot.name" . }}
+    chart: {{ template "ghbot.chart" . }}
+    heritage: {{ .Release.Service }}
+    release: {{ .Release.Name }}
+  annotations:
+    helm.sh/hook: test
+    helm.sh/hook-delete-policy: before-hook-creation
+spec:
+  restartPolicy: Never
+  containers:
+    - name: smoke
+      image: {{ .Values.image }}:{{ .Values.imageTag }}
+      command:
+        - node
+        - -e
+        - |
+          const http = require('http');
+          const url = 'http://{{ template "ghbot.fullname" . }}:{{ .Values.service.port }}{{ .Values.probePath }}';
+          http.get(url, (res) => {
+            console.log('GET ' + url + ' -> ' + res.statusCode);
+            process.exit(res.statusCode === 200 ? 0 : 1);
+          }).on('error', (err) => {
+            console.error(err.message);
+            process.exit(1);
+          });

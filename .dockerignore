@@ -1,0 +1,10 @@
+node_modules
+.git
+.env
+.DS_Store
+.buildkite
+helm
+tools
+helmfile.yaml.gotmpl
+render.yaml
+README.md
