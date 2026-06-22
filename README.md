@@ -20,6 +20,9 @@
 - Cleans up AI reviewer comments:
   - Removing links to unsupported features
   - Collapses summaries
+- Admin merge:
+  - An authorized user commenting `admin merge` squash-merges the pull request, bypassing checks
+  - Authorized users are configured via `merge_admins` (see below)
 
 ## Config file
 
@@ -33,4 +36,9 @@ providers:
   - copilot
   - greptile
   - linearb
+
+# GitHub logins allowed to force a squash merge with `admin merge`.
+# Resolved only from the default branch / org repo, never a PR branch.
+merge_admins:
+  - reece-como
 ```
