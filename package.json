@@ -5,7 +5,8 @@
   "description": "GitHub Probot App",
   "type": "module",
   "scripts": {
-    "start": "probot run ./app.js"
+    "start": "probot run ./app.js",
+    "test": "node --test"
   },
   "engines": {
     "node": ">=20"
