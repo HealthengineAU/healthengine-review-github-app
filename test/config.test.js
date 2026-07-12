@@ -139,10 +139,28 @@ test("normalizeAutoReview: defaults for missing or junk values", () => {
   for (const raw of [undefined, null, {}, "nonsense", 42]) {
     const result = normalizeAutoReview(raw);
     assert.equal(result.enabled, true);
+    assert.deepEqual([...result.includeBranches].sort(), ["develop", "main", "master"]);
     assert.equal(result.excludeRepos.size, 0);
     assert.equal(result.excludeAuthors.size, 0);
     assert.equal(result.minDiffSize, 0);
     assert.equal(result.maxDiffSize, 2000);
+  }
+});
+
+test("normalizeAutoReview: include_branches replaces the default list", () => {
+  const result = normalizeAutoReview({ include_branches: ["Release", "  main "] });
+  assert.deepEqual([...result.includeBranches].sort(), ["main", "release"]);
+  assert.equal(result.includeBranches.has("develop"), false);
+});
+
+test("normalizeAutoReview: empty/invalid include_branches falls back to defaults", () => {
+  for (const bad of [[], ["", 42, null], "main"]) {
+    const result = normalizeAutoReview({ include_branches: bad });
+    assert.deepEqual(
+      [...result.includeBranches].sort(),
+      ["develop", "main", "master"],
+      `for ${JSON.stringify(bad)}`
+    );
   }
 });
 

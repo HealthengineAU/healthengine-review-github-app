@@ -17,6 +17,8 @@ function makePayload(overrides = {}) {
       number: 11,
       draft: false,
       state: "open",
+      base: { ref: "main" },
+      head: { sha: "abc123" },
       user: { login: "david", type: "User" },
       labels: [],
       additions: 10,
@@ -32,20 +34,33 @@ function countCalls(octokit, method) {
   return octokit.calls.filter((c) => c.method === method).length;
 }
 
-async function dispatchAutoTrigger({ event = "pull_request.opened", payload, config, octokit, repo }) {
+// Eligible PRs are evaluated behind a ~30s timer (so gitStream's status can
+// land first). Advance the mocked clock and let the async chain settle.
+async function flushEvaluateDelay(t) {
+  t.mock.timers.tick(31_000);
+  for (let i = 0; i < 20; i++) await Promise.resolve();
+}
+
+async function dispatchAutoTrigger(t, { event = "pull_request.opened", payload, config, octokit, repo }) {
+  try {
+    t.mock.timers.enable({ apis: ["setTimeout"] });
+  } catch {
+    // already enabled by an earlier dispatch in the same test
+  }
   const { app, dispatch } = makeApp();
   register(app);
   const context = makeContext({ octokit, config, repo, payload });
   await dispatch(event, context);
+  await flushEvaluateDelay(t);
 }
 
 // ---------------------------------------------------------------------------
 // Cheap guards: no API traffic at all
 // ---------------------------------------------------------------------------
 
-test("auto-trigger: draft PRs are skipped", async () => {
+test("auto-trigger: draft PRs are skipped", async (t) => {
   const octokit = makeOctokit();
-  await dispatchAutoTrigger({
+  await dispatchAutoTrigger(t, {
     octokit,
     config: fakeConfig(),
     payload: makePayload({ draft: true }),
@@ -53,9 +68,9 @@ test("auto-trigger: draft PRs are skipped", async () => {
   assert.equal(octokit.calls.length, 0);
 });
 
-test("auto-trigger: bot-authored PRs are skipped", async () => {
+test("auto-trigger: bot-authored PRs are skipped", async (t) => {
   const octokit = makeOctokit();
-  await dispatchAutoTrigger({
+  await dispatchAutoTrigger(t, {
     octokit,
     config: fakeConfig(),
     payload: makePayload({ user: { login: "dependabot[bot]", type: "Bot" } }),
@@ -63,9 +78,9 @@ test("auto-trigger: bot-authored PRs are skipped", async () => {
   assert.equal(octokit.calls.length, 0);
 });
 
-test("auto-trigger: the skip-ai-review label is respected", async () => {
+test("auto-trigger: the skip-ai-review label is respected", async (t) => {
   const octokit = makeOctokit();
-  await dispatchAutoTrigger({
+  await dispatchAutoTrigger(t, {
     octokit,
     config: fakeConfig(),
     payload: makePayload({ labels: [{ name: "skip-ai-review" }] }),
@@ -77,9 +92,9 @@ test("auto-trigger: the skip-ai-review label is respected", async () => {
 // Config gate
 // ---------------------------------------------------------------------------
 
-test("auto-trigger: auto_review.enabled=false turns the feature off", async () => {
+test("auto-trigger: auto_review.enabled=false turns the feature off", async (t) => {
   const octokit = makeOctokit();
-  await dispatchAutoTrigger({
+  await dispatchAutoTrigger(t, {
     octokit,
     config: fakeConfig({ auto_review: { enabled: false } }),
     payload: makePayload(),
@@ -87,9 +102,50 @@ test("auto-trigger: auto_review.enabled=false turns the feature off", async () =
   assert.equal(octokit.calls.length, 0);
 });
 
-test("auto-trigger: excluded repos are skipped (case-insensitive)", async () => {
+test("auto-trigger: PRs targeting non-mainline branches are skipped by default", async (t) => {
   const octokit = makeOctokit();
-  await dispatchAutoTrigger({
+  await dispatchAutoTrigger(t, {
+    octokit,
+    config: fakeConfig(),
+    payload: makePayload({ base: { ref: "feature/some-branch" } }),
+  });
+  assert.equal(octokit.calls.length, 0);
+});
+
+test("auto-trigger: every default include branch is eligible", async (t) => {
+  for (const ref of ["master", "main", "develop"]) {
+    const octokit = makeOctokit();
+    await dispatchAutoTrigger(t, {
+      octokit,
+      config: fakeConfig(),
+      payload: makePayload({ base: { ref } }),
+    });
+    assert.equal(countCalls(octokit, "rest.pulls.requestReviewers"), 1, `expected invite for base ${ref}`);
+  }
+});
+
+test("auto-trigger: include_branches overrides the default list", async (t) => {
+  const releaseOctokit = makeOctokit();
+  await dispatchAutoTrigger(t, {
+    octokit: releaseOctokit,
+    config: fakeConfig({ auto_review: { include_branches: ["Release"] } }),
+    payload: makePayload({ base: { ref: "release" } }),
+  });
+  assert.equal(countCalls(releaseOctokit, "rest.pulls.requestReviewers"), 1);
+
+  // ...and the defaults no longer apply once overridden.
+  const mainOctokit = makeOctokit();
+  await dispatchAutoTrigger(t, {
+    octokit: mainOctokit,
+    config: fakeConfig({ auto_review: { include_branches: ["release"] } }),
+    payload: makePayload({ base: { ref: "main" } }),
+  });
+  assert.equal(mainOctokit.calls.length, 0);
+});
+
+test("auto-trigger: excluded repos are skipped (case-insensitive)", async (t) => {
+  const octokit = makeOctokit();
+  await dispatchAutoTrigger(t, {
     octokit,
     repo: "excluded-repo",
     config: fakeConfig({ auto_review: { exclude_repos: ["Excluded-Repo"] } }),
@@ -98,9 +154,9 @@ test("auto-trigger: excluded repos are skipped (case-insensitive)", async () => 
   assert.equal(octokit.calls.length, 0);
 });
 
-test("auto-trigger: excluded authors are skipped (case-insensitive)", async () => {
+test("auto-trigger: excluded authors are skipped (case-insensitive)", async (t) => {
   const octokit = makeOctokit();
-  await dispatchAutoTrigger({
+  await dispatchAutoTrigger(t, {
     octokit,
     config: fakeConfig({ auto_review: { exclude_authors: ["David"] } }),
     payload: makePayload(),
@@ -108,9 +164,9 @@ test("auto-trigger: excluded authors are skipped (case-insensitive)", async () =
   assert.equal(octokit.calls.length, 0);
 });
 
-test("auto-trigger: diffs below min_diff_size are skipped", async () => {
+test("auto-trigger: diffs below min_diff_size are skipped", async (t) => {
   const octokit = makeOctokit();
-  await dispatchAutoTrigger({
+  await dispatchAutoTrigger(t, {
     octokit,
     config: fakeConfig({ auto_review: { min_diff_size: 16 } }),
     payload: makePayload({ additions: 10, deletions: 5 }), // 15 < 16
@@ -118,9 +174,9 @@ test("auto-trigger: diffs below min_diff_size are skipped", async () => {
   assert.equal(octokit.calls.length, 0);
 });
 
-test("auto-trigger: diffs above max_diff_size (default 2000) are skipped", async () => {
+test("auto-trigger: diffs above max_diff_size (default 2000) are skipped", async (t) => {
   const octokit = makeOctokit();
-  await dispatchAutoTrigger({
+  await dispatchAutoTrigger(t, {
     octokit,
     config: fakeConfig(),
     payload: makePayload({ additions: 2000, deletions: 1 }), // 2001 > 2000
@@ -128,9 +184,9 @@ test("auto-trigger: diffs above max_diff_size (default 2000) are skipped", async
   assert.equal(octokit.calls.length, 0);
 });
 
-test("auto-trigger: a diff exactly at the bounds is eligible", async () => {
+test("auto-trigger: a diff exactly at the bounds is eligible", async (t) => {
   const octokit = makeOctokit();
-  await dispatchAutoTrigger({
+  await dispatchAutoTrigger(t, {
     octokit,
     config: fakeConfig(),
     payload: makePayload({ additions: 2000, deletions: 0 }), // 2000 === max
@@ -142,13 +198,13 @@ test("auto-trigger: a diff exactly at the bounds is eligible", async () => {
 // Existing activity suppresses the invite
 // ---------------------------------------------------------------------------
 
-test("auto-trigger: a completed bot review suppresses the invite", async () => {
+test("auto-trigger: a completed bot review suppresses the invite", async (t) => {
   const octokit = makeOctokit({
     "paginate:rest.pulls.listReviews": [
       { user: { login: "augmentcode[bot]", type: "Bot", id: 77 }, submitted_at: "2026-07-01T00:00:00Z" },
     ],
   });
-  await dispatchAutoTrigger({
+  await dispatchAutoTrigger(t, {
     octokit,
     event: "pull_request.reopened",
     config: fakeConfig(),
@@ -157,9 +213,9 @@ test("auto-trigger: a completed bot review suppresses the invite", async () => {
   assert.equal(countCalls(octokit, "rest.pulls.requestReviewers"), 0);
 });
 
-test("auto-trigger: an already-requested Copilot suppresses the invite", async () => {
+test("auto-trigger: an already-requested Copilot suppresses the invite", async (t) => {
   const octokit = makeOctokit();
-  await dispatchAutoTrigger({
+  await dispatchAutoTrigger(t, {
     octokit,
     config: fakeConfig(),
     payload: makePayload({
@@ -171,9 +227,9 @@ test("auto-trigger: an already-requested Copilot suppresses the invite", async (
   assert.equal(countCalls(octokit, "rest.pulls.requestReviewers"), 0);
 });
 
-test("auto-trigger: a requested human reviewer does NOT suppress the invite", async () => {
+test("auto-trigger: a requested human reviewer does NOT suppress the invite", async (t) => {
   const octokit = makeOctokit();
-  await dispatchAutoTrigger({
+  await dispatchAutoTrigger(t, {
     octokit,
     config: fakeConfig(),
     payload: makePayload({
@@ -183,13 +239,13 @@ test("auto-trigger: a requested human reviewer does NOT suppress the invite", as
   assert.equal(countCalls(octokit, "rest.pulls.requestReviewers"), 1);
 });
 
-test("auto-trigger: a pending Auggie summon suppresses the invite", async () => {
+test("auto-trigger: a pending Auggie summon suppresses the invite", async (t) => {
   const octokit = makeOctokit({
     "paginate:rest.issues.listComments": [
       { user: { login: "david", type: "User", id: 1 }, body: "auggie review", created_at: "2026-07-01T00:00:00Z" },
     ],
   });
-  await dispatchAutoTrigger({
+  await dispatchAutoTrigger(t, {
     octokit,
     config: fakeConfig({ providers: ["augment", "copilot"] }),
     payload: makePayload(),
@@ -198,15 +254,57 @@ test("auto-trigger: a pending Auggie summon suppresses the invite", async () => 
   assert.equal(countCalls(octokit, "rest.issues.createComment"), 0);
 });
 
-test("auto-trigger: a dangling summon for a disabled Augment doesn't block", async () => {
+test("auto-trigger: a dangling summon for a disabled Augment doesn't block", async (t) => {
   const octokit = makeOctokit({
     "paginate:rest.issues.listComments": [
       { user: { login: "david", type: "User", id: 1 }, body: "auggie review", created_at: "2026-07-01T00:00:00Z" },
     ],
   });
-  await dispatchAutoTrigger({
+  await dispatchAutoTrigger(t, {
     octokit,
     config: fakeConfig({ providers: ["copilot"] }), // augment disabled
+    payload: makePayload(),
+  });
+  assert.equal(countCalls(octokit, "rest.pulls.requestReviewers"), 1);
+});
+
+test("auto-trigger: a live gitStream run (incoming LinearB review) suppresses the invite", async (t) => {
+  const octokit = makeOctokit({
+    "rest.repos.getCombinedStatusForRef": {
+      data: { statuses: [{ context: "gitStream.cm", state: "pending" }] },
+    },
+  });
+  await dispatchAutoTrigger(t, {
+    octokit,
+    config: fakeConfig({ providers: ["copilot", "linearb"] }),
+    payload: makePayload(),
+  });
+  assert.equal(countCalls(octokit, "rest.pulls.requestReviewers"), 0);
+});
+
+test("auto-trigger: a failing gitStream run does not block the invite", async (t) => {
+  const octokit = makeOctokit({
+    "rest.repos.getCombinedStatusForRef": {
+      data: { statuses: [{ context: "gitStream.cm", state: "failure" }] },
+    },
+  });
+  await dispatchAutoTrigger(t, {
+    octokit,
+    config: fakeConfig({ providers: ["copilot", "linearb"] }),
+    payload: makePayload(),
+  });
+  assert.equal(countCalls(octokit, "rest.pulls.requestReviewers"), 1);
+});
+
+test("auto-trigger: gitStream status is ignored when LinearB is disabled", async (t) => {
+  const octokit = makeOctokit({
+    "rest.repos.getCombinedStatusForRef": {
+      data: { statuses: [{ context: "gitStream.cm", state: "pending" }] },
+    },
+  });
+  await dispatchAutoTrigger(t, {
+    octokit,
+    config: fakeConfig({ providers: ["copilot"] }), // linearb disabled
     payload: makePayload(),
   });
   assert.equal(countCalls(octokit, "rest.pulls.requestReviewers"), 1);
@@ -216,22 +314,28 @@ test("auto-trigger: a dangling summon for a disabled Augment doesn't block", asy
 // Happy paths
 // ---------------------------------------------------------------------------
 
-test("auto-trigger: an eligible opened PR summons one reviewer", async () => {
+test("auto-trigger: an eligible opened PR summons one reviewer after the delay", async (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
   const octokit = makeOctokit();
-  await dispatchAutoTrigger({
-    octokit,
-    config: fakeConfig(),
-    payload: makePayload(),
-  });
+  const { app, dispatch } = makeApp();
+  register(app);
+  const context = makeContext({ octokit, config: fakeConfig(), payload: makePayload() });
+
+  await dispatch("pull_request.opened", context);
+
+  // Nothing happens until the evaluation delay elapses...
+  assert.equal(octokit.calls.length, 0);
+
+  await flushEvaluateDelay(t);
 
   const requests = octokit.calls.filter((c) => c.method === "rest.pulls.requestReviewers");
   assert.equal(requests.length, 1);
   assert.deepEqual(requests[0].args.reviewers, ["copilot-pull-request-reviewer[bot]"]);
 });
 
-test("auto-trigger: ready_for_review also summons", async () => {
+test("auto-trigger: ready_for_review also summons", async (t) => {
   const octokit = makeOctokit();
-  await dispatchAutoTrigger({
+  await dispatchAutoTrigger(t, {
     octokit,
     event: "pull_request.ready_for_review",
     config: fakeConfig(),

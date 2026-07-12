@@ -251,6 +251,48 @@ test("detectPendingAiReviewRequests: empty PR yields no requests", () => {
   assert.deepEqual(detectPendingAiReviewRequests({ pr: {} }), []);
 });
 
+test("detectPendingAiReviewRequests: a non-failing gitStream status means LinearB", () => {
+  for (const state of ["pending", "success"]) {
+    const requests = detectPendingAiReviewRequests({
+      pr: {},
+      statuses: [{ context: "gitStream.cm", state }],
+    });
+    assert.equal(requests.length, 1, `state ${state}`);
+    assert.equal(requests[0].provider, "linearb");
+    assert.equal(requests[0].displayName, "LinearB");
+  }
+});
+
+test("detectPendingAiReviewRequests: failing gitStream statuses are not requests", () => {
+  for (const state of ["failure", "error"]) {
+    const requests = detectPendingAiReviewRequests({
+      pr: {},
+      statuses: [{ context: "gitStream.cm", state }],
+    });
+    assert.equal(requests.length, 0, `state ${state}`);
+  }
+});
+
+test("detectPendingAiReviewRequests: unrelated statuses are ignored", () => {
+  const requests = detectPendingAiReviewRequests({
+    pr: {},
+    statuses: [
+      { context: "ci/build", state: "pending" },
+      { context: "AI Review", state: "success" },
+    ],
+  });
+  assert.equal(requests.length, 0);
+});
+
+test("detectPendingAiReviewRequests: linearbEnabled=false ignores gitStream", () => {
+  const requests = detectPendingAiReviewRequests({
+    pr: {},
+    statuses: [{ context: "gitStream.cm", state: "pending" }],
+    linearbEnabled: false,
+  });
+  assert.equal(requests.length, 0);
+});
+
 // ---------------------------------------------------------------------------
 // hasCompletedAiReview
 // ---------------------------------------------------------------------------

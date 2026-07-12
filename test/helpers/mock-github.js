@@ -59,6 +59,7 @@ export function makeOctokit(responses = {}) {
     rest: {
       repos: {
         createCommitStatus: record("rest.repos.createCommitStatus"),
+        getCombinedStatusForRef: record("rest.repos.getCombinedStatusForRef"),
       },
       issues: {
         listComments: tag("rest.issues.listComments"),

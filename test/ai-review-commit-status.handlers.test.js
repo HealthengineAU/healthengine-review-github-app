@@ -322,6 +322,29 @@ test("a requested Copilot reviewer still produces 'Requested Copilot'", async (t
   assert.match(statuses[0].args.description, /Requested Copilot/);
 });
 
+test("a running gitStream automation shows 'Requested LinearB'", async (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  const { app, dispatch } = makeApp();
+  register(app);
+  const octokit = makeOctokit({
+    "rest.repos.getCombinedStatusForRef": {
+      data: { statuses: [{ context: "gitStream.cm", state: "pending" }] },
+    },
+  });
+  const context = makeContext({
+    octokit,
+    payload: { pull_request: makeOpenPr() },
+  });
+
+  await dispatch("pull_request.synchronize", context);
+  await flushDebounce(t);
+
+  const statuses = statusCalls(octokit);
+  assert.equal(statuses.length, 1);
+  assert.equal(statuses[0].args.state, "success");
+  assert.match(statuses[0].args.description, /Requested LinearB/);
+});
+
 test("a delivered Augment review wins over its own summon", async (t) => {
   t.mock.timers.enable({ apis: ["setTimeout"] });
   const { app, dispatch } = makeApp();

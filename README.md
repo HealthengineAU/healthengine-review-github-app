@@ -23,10 +23,14 @@
 - Automatically invites a random AI reviewer:
   - When a pull request is opened (non-draft), marked ready for review, or reopened
   - Only when the PR has no completed AI review and no pending AI review
-    request (a requested Copilot, an Auggie summon, an AI-review team request)
+    request (a requested Copilot, an Auggie summon, an AI-review team request,
+    or an incoming LinearB review — detected via a present, non-failing
+    `gitStream.cm` commit status)
+  - Evaluated ~30s after the PR event so gitStream's status has time to land
   - Skips drafts, bot authors, and PRs labelled `skip-ai-review`
-  - Configurable via `auto_review` (see below): excluded repos/authors and
-    min/max diff size (defaults 0–2000 changed lines)
+  - Configurable via `auto_review` (see below): eligible target branches
+    (default `master`/`main`/`develop`), excluded repos/authors, and min/max
+    diff size (defaults 0–2000 changed lines)
 - Cleans up AI reviewer comments:
   - Removing links to unsupported features
   - Collapses summaries
@@ -60,6 +64,10 @@ providers:
 # automatic review invites (all keys optional; defaults shown)
 auto_review:
   enabled: true        # kill switch for automatic invites
+  include_branches:    # only PRs targeting these base branches are invited
+    - master
+    - main
+    - develop
   exclude_repos: []    # repo names to leave alone, e.g. [legacy-monolith]
   exclude_authors: []  # GitHub logins to leave alone, e.g. [some-user]
   min_diff_size: 0     # inclusive bounds on additions + deletions;
