@@ -148,6 +148,35 @@ test("issue_comment: standalone 'ai review' picks the only enabled provider", as
   assert.equal(countCalls(octokit, "rest.pulls.requestReviewers"), 1);
 });
 
+test("issue_comment: Auggie summon survives failing comment edits", async (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  const errors = t.mock.method(console, "error", () => {});
+  const { app, dispatch } = makeApp();
+  register(app);
+  const octokit = makeOctokit({
+    "rest.issues.updateComment": () => {
+      throw new Error("api down");
+    },
+  });
+  const context = makeContext({
+    octokit,
+    config: fakeConfig(["augment"]),
+    payload: {
+      issue: { number: 7, pull_request: {} },
+      comment: { id: 5, body: "roast me auggie", user: { type: "User" } },
+    },
+  });
+  await dispatch("issue_comment.created", context);
+
+  // Fire the +5s marker edit and the +12s acknowledgement check; both hit the
+  // failing updateComment and must be caught + logged, not left as unhandled
+  // rejections (which would crash the process).
+  t.mock.timers.tick(13_000);
+  for (let i = 0; i < 20; i++) await Promise.resolve();
+
+  assert.equal(errors.mock.callCount(), 2);
+});
+
 test("issue_comment: an unrelated comment does nothing", async () => {
   const { app, dispatch } = makeApp();
   register(app);
