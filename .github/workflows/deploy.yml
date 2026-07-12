@@ -1,0 +1,32 @@
+# Deploys to Render without the Render GitHub App.
+#
+# Instead of Render watching the repo, we POST to a per-service Deploy Hook.
+# Create one at: Render dashboard → the service → Settings → Deploy Hook, then
+# store the full URL as the repo secret RENDER_DEPLOY_HOOK_URL
+# (Settings → Secrets and variables → Actions).
+name: Deploy to Render
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch: # allow manual redeploys from the Actions tab
+
+# Never run two deploys at once; a newer push supersedes an in-flight one.
+concurrency:
+  group: render-deploy
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger Render deploy
+        env:
+          RENDER_DEPLOY_HOOK_URL: ${{ secrets.RENDER_DEPLOY_HOOK_URL }}
+        run: |
+          if [ -z "$RENDER_DEPLOY_HOOK_URL" ]; then
+            echo "::error::RENDER_DEPLOY_HOOK_URL secret is not set" >&2
+            exit 1
+          fi
+          # -f fails the step on any non-2xx response so a broken hook is visible.
+          curl -fsS -X POST "$RENDER_DEPLOY_HOOK_URL"
