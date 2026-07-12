@@ -21,6 +21,19 @@
   - Removing links to unsupported features
   - Collapses summaries
 
+## Tests
+
+Unit and handler tests run on the built-in Node test runner (no extra dependencies):
+
+```sh
+npm test
+```
+
+They also run automatically on every pull request and on pushes to `main` via
+the [Test workflow](.github/workflows/test.yml). Tests live in [test/](test/):
+pure helpers are tested directly, and event handlers are exercised against a
+lightweight `octokit`/`context` mock in [test/helpers/mock-github.js](test/helpers/mock-github.js).
+
 ## Config file
 
 Use the [.github/healthengine-review.yml](https://github.com/HealthengineAU/.github/blob/main/.github/healthengine-review.yml) file in the organization's special `.github` repo to configure settings for all repos:
