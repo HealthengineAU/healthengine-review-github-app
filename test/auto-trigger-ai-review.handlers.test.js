@@ -102,6 +102,17 @@ test("auto-trigger: auto_review.enabled=false turns the feature off", async (t) 
   assert.equal(octokit.calls.length, 0);
 });
 
+test("auto-trigger: no summonable providers means no evaluation fetches", async (t) => {
+  const octokit = makeOctokit();
+  await dispatchAutoTrigger(t, {
+    octokit,
+    // linearb is enabled but can't be summoned; the whole evaluation is moot.
+    config: fakeConfig({ providers: ["linearb"] }),
+    payload: makePayload(),
+  });
+  assert.equal(octokit.calls.length, 0);
+});
+
 test("auto-trigger: PRs targeting non-mainline branches are skipped by default", async (t) => {
   const octokit = makeOctokit();
   await dispatchAutoTrigger(t, {
