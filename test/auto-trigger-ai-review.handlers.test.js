@@ -124,12 +124,12 @@ test("auto-trigger: every default include branch is eligible", async (t) => {
   }
 });
 
-test("auto-trigger: include_branches overrides the default list", async (t) => {
+test("auto-trigger: branches patterns override the default list", async (t) => {
   const releaseOctokit = makeOctokit();
   await dispatchAutoTrigger(t, {
     octokit: releaseOctokit,
-    config: fakeConfig({ auto_review: { include_branches: ["Release"] } }),
-    payload: makePayload({ base: { ref: "release" } }),
+    config: fakeConfig({ auto_review: { branches: ["Release/*"] } }),
+    payload: makePayload({ base: { ref: "release/1.2" } }),
   });
   assert.equal(countCalls(releaseOctokit, "rest.pulls.requestReviewers"), 1);
 
@@ -137,28 +137,46 @@ test("auto-trigger: include_branches overrides the default list", async (t) => {
   const mainOctokit = makeOctokit();
   await dispatchAutoTrigger(t, {
     octokit: mainOctokit,
-    config: fakeConfig({ auto_review: { include_branches: ["release"] } }),
+    config: fakeConfig({ auto_review: { branches: ["release/*"] } }),
     payload: makePayload({ base: { ref: "main" } }),
   });
   assert.equal(mainOctokit.calls.length, 0);
 });
 
-test("auto-trigger: excluded repos are skipped (case-insensitive)", async (t) => {
+test("auto-trigger: negative branch patterns exclude", async (t) => {
+  const keptOctokit = makeOctokit();
+  await dispatchAutoTrigger(t, {
+    octokit: keptOctokit,
+    config: fakeConfig({ auto_review: { branches: ["**", "!test/**"] } }),
+    payload: makePayload({ base: { ref: "feature/x" } }),
+  });
+  assert.equal(countCalls(keptOctokit, "rest.pulls.requestReviewers"), 1);
+
+  const excludedOctokit = makeOctokit();
+  await dispatchAutoTrigger(t, {
+    octokit: excludedOctokit,
+    config: fakeConfig({ auto_review: { branches: ["**", "!test/**"] } }),
+    payload: makePayload({ base: { ref: "test/scratch" } }),
+  });
+  assert.equal(excludedOctokit.calls.length, 0);
+});
+
+test("auto-trigger: repositories patterns are respected (case-insensitive)", async (t) => {
   const octokit = makeOctokit();
   await dispatchAutoTrigger(t, {
     octokit,
     repo: "excluded-repo",
-    config: fakeConfig({ auto_review: { exclude_repos: ["Excluded-Repo"] } }),
+    config: fakeConfig({ auto_review: { repositories: ["**", "!Excluded-Repo"] } }),
     payload: makePayload(),
   });
   assert.equal(octokit.calls.length, 0);
 });
 
-test("auto-trigger: excluded authors are skipped (case-insensitive)", async (t) => {
+test("auto-trigger: authors patterns are respected (case-insensitive)", async (t) => {
   const octokit = makeOctokit();
   await dispatchAutoTrigger(t, {
     octokit,
-    config: fakeConfig({ auto_review: { exclude_authors: ["David"] } }),
+    config: fakeConfig({ auto_review: { authors: ["**", "!David"] } }),
     payload: makePayload(),
   });
   assert.equal(octokit.calls.length, 0);

@@ -28,9 +28,9 @@
     `gitStream.cm` commit status)
   - Evaluated ~30s after the PR event so gitStream's status has time to land
   - Skips drafts, bot authors, and PRs labelled `skip-ai-review`
-  - Configurable via `auto_review` (see below): eligible target branches
-    (default `master`/`main`/`develop`), excluded repos/authors, and min/max
-    diff size (defaults 0–2000 changed lines)
+  - Configurable via `auto_review` (see below): target branches, repos, and
+    authors as GitHub-Actions-style filter patterns, plus min/max diff size
+    (defaults 0–2000 changed lines)
 - Cleans up AI reviewer comments:
   - Removing links to unsupported features
   - Collapses summaries
@@ -62,14 +62,19 @@ providers:
   - linearb
 
 # automatic review invites (all keys optional; defaults shown)
+#
+# branches / repositories / authors take GitHub-Actions-style filter patterns:
+# `*` (segment wildcard), `**` (any), and `!` to negate a previous match —
+# evaluated in order, last match wins, e.g. ["**", "!legacy-monolith"].
+# Quote patterns that start with * or ! (YAML special characters).
 auto_review:
-  enabled: true        # kill switch for automatic invites
-  include_branches:    # only PRs targeting these base branches are invited
+  enabled: true          # kill switch for automatic invites
+  branches:              # base branches whose PRs are invited
     - master
     - main
     - develop
-  exclude_repos: []    # repo names to leave alone, e.g. [legacy-monolith]
-  exclude_authors: []  # GitHub logins to leave alone, e.g. [some-user]
-  min_diff_size: 0     # inclusive bounds on additions + deletions;
-  max_diff_size: 2000  # PRs outside the range aren't auto-invited
+  repositories: ["**"]   # e.g. ["**", "!legacy-monolith"]
+  authors: ["**"]        # e.g. ["**", "!*-service-account"]
+  min_diff_size: 0       # inclusive bounds on additions + deletions;
+  max_diff_size: 2000    # PRs outside the range aren't auto-invited
 ```
