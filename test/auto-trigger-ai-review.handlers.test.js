@@ -70,11 +70,11 @@ test("auto-trigger: draft PRs are skipped by default", async (t) => {
   assert.equal(octokit.calls.length, 0);
 });
 
-test("auto-trigger: ai_review.draft=true includes draft PRs", async (t) => {
+test("auto-trigger: ai_review.include_drafts=true includes draft PRs", async (t) => {
   const octokit = makeOctokit();
   await dispatchAutoTrigger(t, {
     octokit,
-    config: fakeConfig({ ai_review: { draft: true } }),
+    config: fakeConfig({ ai_review: { include_drafts: true } }),
     payload: makePayload({ draft: true }),
   });
   assert.equal(countCalls(octokit, "rest.pulls.requestReviewers"), 1);

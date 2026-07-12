@@ -141,7 +141,7 @@ test("normalizeAiReview: defaults for missing or junk values", () => {
     const result = normalizeAiReview(raw);
     // Automatic invites are opt-in, and drafts are excluded by default.
     assert.equal(result.automatic, false);
-    assert.equal(result.draft, false);
+    assert.equal(result.includeDrafts, false);
     // Branches default to the mainline trio…
     for (const branch of ["master", "main", "develop"]) {
       assert.ok(matchesFilterPatterns(result.branches, branch), branch);
@@ -190,10 +190,10 @@ test("normalizeAiReview: automatic is a strict opt-in", () => {
   }
 });
 
-test("normalizeAiReview: drafts are excluded unless draft: true", () => {
-  assert.equal(normalizeAiReview({ draft: true }).draft, true);
-  for (const raw of [{}, { draft: false }, { draft: "yes" }]) {
-    assert.equal(normalizeAiReview(raw).draft, false, JSON.stringify(raw));
+test("normalizeAiReview: drafts are excluded unless include_drafts: true", () => {
+  assert.equal(normalizeAiReview({ include_drafts: true }).includeDrafts, true);
+  for (const raw of [{}, { include_drafts: false }, { include_drafts: "yes" }]) {
+    assert.equal(normalizeAiReview(raw).includeDrafts, false, JSON.stringify(raw));
   }
 });
 

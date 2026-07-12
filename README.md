@@ -28,7 +28,7 @@
     `gitStream.cm` commit status)
   - Evaluated ~30s after the PR event so gitStream's status has time to land
   - Skips bot authors, PRs labelled `skip-ai-review`, and drafts (unless
-    `ai_review.draft: true`)
+    `ai_review.include_drafts: true`)
   - Configurable via `ai_review` (see below): target branches, repos, and
     authors as GitHub-Actions-style filter patterns, plus min/max diff size
     (defaults 0–2000 changed lines)
@@ -69,14 +69,14 @@ providers:
 # negate a previous match — evaluated in order, last match wins.
 # Quote patterns that start with * or ! (YAML special characters).
 ai_review:
-  automatic: false      # set true to auto-invite a reviewer on eligible PRs
-  draft: false          # set true to also invite on draft PRs
-  branches:             # base branches whose PRs are invited
+  automatic: false       # set true to auto-invite a reviewer on eligible PRs
+  include_drafts: false  # set true to also invite on draft PRs
+  branches:              # base branches whose PRs are invited
     - master
     - main
     - develop
-  repositories: ["*"]   # e.g. ["*", "!legacy-monolith"]
-  authors: ["*"]        # e.g. ["*", "!*-service-account"]
-  min_diff_size: 0      # inclusive bounds on additions + deletions;
-  max_diff_size: 2000   # PRs outside the range aren't auto-invited
+  repositories: ["*"]    # e.g. ["*", "!legacy-monolith"]
+  authors: ["*"]         # e.g. ["*", "!*-service-account"]
+  min_diff_size: 0       # inclusive bounds on additions + deletions;
+  max_diff_size: 2000    # PRs outside the range aren't auto-invited
 ```
