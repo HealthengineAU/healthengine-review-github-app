@@ -1,0 +1,25 @@
+name: Deploy
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch: # allow manual redeploys from the Actions tab
+
+concurrency:
+  group: render-deploy
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy
+        env:
+          RENDER_DEPLOY_HOOK_URL: ${{ secrets.RENDER_DEPLOY_HOOK_URL }}
+        run: |
+          if [ -z "$RENDER_DEPLOY_HOOK_URL" ]; then
+            echo "::error::RENDER_DEPLOY_HOOK_URL secret is not set" >&2
+            exit 1
+          fi
+          # -f fails the step on any non-2xx response so a broken hook is visible.
+          curl -fsS -X POST "$RENDER_DEPLOY_HOOK_URL"

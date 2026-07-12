@@ -21,4 +21,4 @@ projects:
       region: ohio
       buildCommand: npm install
       startCommand: npm run start
-      autoDeployTrigger: commit
+      autoDeployTrigger: "off"

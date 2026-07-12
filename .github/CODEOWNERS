@@ -1,1 +1,7 @@
-* @HealthEngineAU/platform-team
+# ----- Default owners: -----
+* @reececomo
+
+# ----- Teams: -----
+
+# Platform Team - security
+/.github/CODEOWNERS @HealthengineAU/platform-team
