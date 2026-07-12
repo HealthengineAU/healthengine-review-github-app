@@ -162,8 +162,8 @@ test("normalizeAutoReview: a pattern list replaces its default entirely", () => 
 
 test("normalizeAutoReview: negative patterns exclude", () => {
   const result = normalizeAutoReview({
-    repositories: ["**", "!legacy-monolith"],
-    authors: ["**", "!*-service-account"],
+    repositories: ["*", "!legacy-monolith"],
+    authors: ["*", "!*-service-account"],
   });
   assert.ok(matchesFilterPatterns(result.repositories, "normal-repo"));
   assert.equal(matchesFilterPatterns(result.repositories, "Legacy-Monolith"), false);
@@ -213,7 +213,7 @@ test("loadAiReviewConfig: exposes normalized autoReview settings", async () => {
   const ctx = makeContext({
     configValue: {
       providers: ["claude"],
-      auto_review: { enabled: false, repositories: ["**", "!Legacy-Repo"] },
+      auto_review: { enabled: false, repositories: ["*", "!Legacy-Repo"] },
     },
   });
   const config = await loadAiReviewConfig(ctx);

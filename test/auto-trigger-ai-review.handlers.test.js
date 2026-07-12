@@ -166,7 +166,7 @@ test("auto-trigger: repositories patterns are respected (case-insensitive)", asy
   await dispatchAutoTrigger(t, {
     octokit,
     repo: "excluded-repo",
-    config: fakeConfig({ auto_review: { repositories: ["**", "!Excluded-Repo"] } }),
+    config: fakeConfig({ auto_review: { repositories: ["*", "!Excluded-Repo"] } }),
     payload: makePayload(),
   });
   assert.equal(octokit.calls.length, 0);
@@ -176,7 +176,7 @@ test("auto-trigger: authors patterns are respected (case-insensitive)", async (t
   const octokit = makeOctokit();
   await dispatchAutoTrigger(t, {
     octokit,
-    config: fakeConfig({ auto_review: { authors: ["**", "!David"] } }),
+    config: fakeConfig({ auto_review: { authors: ["*", "!David"] } }),
     payload: makePayload(),
   });
   assert.equal(octokit.calls.length, 0);

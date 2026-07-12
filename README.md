@@ -64,17 +64,17 @@ providers:
 # automatic review invites (all keys optional; defaults shown)
 #
 # branches / repositories / authors take GitHub-Actions-style filter patterns:
-# `*` (segment wildcard), `**` (any), and `!` to negate a previous match —
-# evaluated in order, last match wins, e.g. ["**", "!legacy-monolith"].
+# `*` (segment wildcard), `**` (spans "/", for branch names), and `!` to
+# negate a previous match — evaluated in order, last match wins.
 # Quote patterns that start with * or ! (YAML special characters).
 auto_review:
-  enabled: true          # kill switch for automatic invites
-  branches:              # base branches whose PRs are invited
+  enabled: true         # kill switch for automatic invites
+  branches:             # base branches whose PRs are invited
     - master
     - main
     - develop
-  repositories: ["**"]   # e.g. ["**", "!legacy-monolith"]
-  authors: ["**"]        # e.g. ["**", "!*-service-account"]
-  min_diff_size: 0       # inclusive bounds on additions + deletions;
-  max_diff_size: 2000    # PRs outside the range aren't auto-invited
+  repositories: ["*"]   # e.g. ["*", "!legacy-monolith"]
+  authors: ["*"]        # e.g. ["*", "!*-service-account"]
+  min_diff_size: 0      # inclusive bounds on additions + deletions;
+  max_diff_size: 2000   # PRs outside the range aren't auto-invited
 ```
