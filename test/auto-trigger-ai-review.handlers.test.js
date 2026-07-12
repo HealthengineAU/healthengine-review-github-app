@@ -1,0 +1,241 @@
+import { test } from "node:test";
+import assert from "node:assert/strict";
+
+import { register } from "../lib/auto-trigger-ai-review.js";
+import { makeApp, makeOctokit, makeContext } from "./helpers/mock-github.js";
+
+// The handlers build their own config via loadAiReviewConfig(context), which
+// reads the RAW YAML from context.config(). Only enabling copilot makes
+// triggerRandomReviewer deterministic (and timer-free) in the happy paths.
+function fakeConfig({ providers = ["copilot"], auto_review } = {}) {
+  return { providers, auto_review };
+}
+
+function makePayload(overrides = {}) {
+  return {
+    pull_request: {
+      number: 11,
+      draft: false,
+      state: "open",
+      user: { login: "david", type: "User" },
+      labels: [],
+      additions: 10,
+      deletions: 5,
+      requested_reviewers: [],
+      requested_teams: [],
+      ...overrides,
+    },
+  };
+}
+
+function countCalls(octokit, method) {
+  return octokit.calls.filter((c) => c.method === method).length;
+}
+
+async function dispatchAutoTrigger({ event = "pull_request.opened", payload, config, octokit, repo }) {
+  const { app, dispatch } = makeApp();
+  register(app);
+  const context = makeContext({ octokit, config, repo, payload });
+  await dispatch(event, context);
+}
+
+// ---------------------------------------------------------------------------
+// Cheap guards: no API traffic at all
+// ---------------------------------------------------------------------------
+
+test("auto-trigger: draft PRs are skipped", async () => {
+  const octokit = makeOctokit();
+  await dispatchAutoTrigger({
+    octokit,
+    config: fakeConfig(),
+    payload: makePayload({ draft: true }),
+  });
+  assert.equal(octokit.calls.length, 0);
+});
+
+test("auto-trigger: bot-authored PRs are skipped", async () => {
+  const octokit = makeOctokit();
+  await dispatchAutoTrigger({
+    octokit,
+    config: fakeConfig(),
+    payload: makePayload({ user: { login: "dependabot[bot]", type: "Bot" } }),
+  });
+  assert.equal(octokit.calls.length, 0);
+});
+
+test("auto-trigger: the skip-ai-review label is respected", async () => {
+  const octokit = makeOctokit();
+  await dispatchAutoTrigger({
+    octokit,
+    config: fakeConfig(),
+    payload: makePayload({ labels: [{ name: "skip-ai-review" }] }),
+  });
+  assert.equal(octokit.calls.length, 0);
+});
+
+// ---------------------------------------------------------------------------
+// Config gate
+// ---------------------------------------------------------------------------
+
+test("auto-trigger: auto_review.enabled=false turns the feature off", async () => {
+  const octokit = makeOctokit();
+  await dispatchAutoTrigger({
+    octokit,
+    config: fakeConfig({ auto_review: { enabled: false } }),
+    payload: makePayload(),
+  });
+  assert.equal(octokit.calls.length, 0);
+});
+
+test("auto-trigger: excluded repos are skipped (case-insensitive)", async () => {
+  const octokit = makeOctokit();
+  await dispatchAutoTrigger({
+    octokit,
+    repo: "excluded-repo",
+    config: fakeConfig({ auto_review: { exclude_repos: ["Excluded-Repo"] } }),
+    payload: makePayload(),
+  });
+  assert.equal(octokit.calls.length, 0);
+});
+
+test("auto-trigger: excluded authors are skipped (case-insensitive)", async () => {
+  const octokit = makeOctokit();
+  await dispatchAutoTrigger({
+    octokit,
+    config: fakeConfig({ auto_review: { exclude_authors: ["David"] } }),
+    payload: makePayload(),
+  });
+  assert.equal(octokit.calls.length, 0);
+});
+
+test("auto-trigger: diffs below min_diff_size are skipped", async () => {
+  const octokit = makeOctokit();
+  await dispatchAutoTrigger({
+    octokit,
+    config: fakeConfig({ auto_review: { min_diff_size: 16 } }),
+    payload: makePayload({ additions: 10, deletions: 5 }), // 15 < 16
+  });
+  assert.equal(octokit.calls.length, 0);
+});
+
+test("auto-trigger: diffs above max_diff_size (default 2000) are skipped", async () => {
+  const octokit = makeOctokit();
+  await dispatchAutoTrigger({
+    octokit,
+    config: fakeConfig(),
+    payload: makePayload({ additions: 2000, deletions: 1 }), // 2001 > 2000
+  });
+  assert.equal(octokit.calls.length, 0);
+});
+
+test("auto-trigger: a diff exactly at the bounds is eligible", async () => {
+  const octokit = makeOctokit();
+  await dispatchAutoTrigger({
+    octokit,
+    config: fakeConfig(),
+    payload: makePayload({ additions: 2000, deletions: 0 }), // 2000 === max
+  });
+  assert.equal(countCalls(octokit, "rest.pulls.requestReviewers"), 1);
+});
+
+// ---------------------------------------------------------------------------
+// Existing activity suppresses the invite
+// ---------------------------------------------------------------------------
+
+test("auto-trigger: a completed bot review suppresses the invite", async () => {
+  const octokit = makeOctokit({
+    "paginate:rest.pulls.listReviews": [
+      { user: { login: "augmentcode[bot]", type: "Bot", id: 77 }, submitted_at: "2026-07-01T00:00:00Z" },
+    ],
+  });
+  await dispatchAutoTrigger({
+    octokit,
+    event: "pull_request.reopened",
+    config: fakeConfig(),
+    payload: makePayload(),
+  });
+  assert.equal(countCalls(octokit, "rest.pulls.requestReviewers"), 0);
+});
+
+test("auto-trigger: an already-requested Copilot suppresses the invite", async () => {
+  const octokit = makeOctokit();
+  await dispatchAutoTrigger({
+    octokit,
+    config: fakeConfig(),
+    payload: makePayload({
+      requested_reviewers: [
+        { login: "copilot-pull-request-reviewer[bot]", type: "Bot", id: 9 },
+      ],
+    }),
+  });
+  assert.equal(countCalls(octokit, "rest.pulls.requestReviewers"), 0);
+});
+
+test("auto-trigger: a requested human reviewer does NOT suppress the invite", async () => {
+  const octokit = makeOctokit();
+  await dispatchAutoTrigger({
+    octokit,
+    config: fakeConfig(),
+    payload: makePayload({
+      requested_reviewers: [{ login: "some-human", type: "User", id: 2 }],
+    }),
+  });
+  assert.equal(countCalls(octokit, "rest.pulls.requestReviewers"), 1);
+});
+
+test("auto-trigger: a pending Auggie summon suppresses the invite", async () => {
+  const octokit = makeOctokit({
+    "paginate:rest.issues.listComments": [
+      { user: { login: "david", type: "User", id: 1 }, body: "auggie review", created_at: "2026-07-01T00:00:00Z" },
+    ],
+  });
+  await dispatchAutoTrigger({
+    octokit,
+    config: fakeConfig({ providers: ["augment", "copilot"] }),
+    payload: makePayload(),
+  });
+  assert.equal(countCalls(octokit, "rest.pulls.requestReviewers"), 0);
+  assert.equal(countCalls(octokit, "rest.issues.createComment"), 0);
+});
+
+test("auto-trigger: a dangling summon for a disabled Augment doesn't block", async () => {
+  const octokit = makeOctokit({
+    "paginate:rest.issues.listComments": [
+      { user: { login: "david", type: "User", id: 1 }, body: "auggie review", created_at: "2026-07-01T00:00:00Z" },
+    ],
+  });
+  await dispatchAutoTrigger({
+    octokit,
+    config: fakeConfig({ providers: ["copilot"] }), // augment disabled
+    payload: makePayload(),
+  });
+  assert.equal(countCalls(octokit, "rest.pulls.requestReviewers"), 1);
+});
+
+// ---------------------------------------------------------------------------
+// Happy paths
+// ---------------------------------------------------------------------------
+
+test("auto-trigger: an eligible opened PR summons one reviewer", async () => {
+  const octokit = makeOctokit();
+  await dispatchAutoTrigger({
+    octokit,
+    config: fakeConfig(),
+    payload: makePayload(),
+  });
+
+  const requests = octokit.calls.filter((c) => c.method === "rest.pulls.requestReviewers");
+  assert.equal(requests.length, 1);
+  assert.deepEqual(requests[0].args.reviewers, ["copilot-pull-request-reviewer[bot]"]);
+});
+
+test("auto-trigger: ready_for_review also summons", async () => {
+  const octokit = makeOctokit();
+  await dispatchAutoTrigger({
+    octokit,
+    event: "pull_request.ready_for_review",
+    config: fakeConfig(),
+    payload: makePayload(),
+  });
+  assert.equal(countCalls(octokit, "rest.pulls.requestReviewers"), 1);
+});

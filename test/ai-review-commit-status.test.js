@@ -2,55 +2,13 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 
 import {
-  getBotDisplayName,
-  isBotUser,
   clampDescription,
-  getBotKey,
   classifyBot,
   formatBotEntry,
 } from "../lib/ai-review-commit-status.js";
 
-// ---------------------------------------------------------------------------
-// getBotDisplayName
-// ---------------------------------------------------------------------------
-
-test("getBotDisplayName: maps known bot logins to friendly names", () => {
-  assert.equal(getBotDisplayName("augmentcode[bot]"), "Auggie");
-  assert.equal(getBotDisplayName("Claude"), "Claude");
-  assert.equal(getBotDisplayName("copilot-pull-request-reviewer[bot]"), "Copilot");
-  assert.equal(getBotDisplayName("greptileai[bot]"), "Greptile");
-  assert.equal(getBotDisplayName("linearb-bot[bot]"), "LinearB");
-});
-
-test("getBotDisplayName: falls back to the raw login when unknown", () => {
-  assert.equal(getBotDisplayName("some-random-bot"), "some-random-bot");
-});
-
-test("getBotDisplayName: handles null/undefined login", () => {
-  assert.equal(getBotDisplayName(null), null);
-  assert.equal(getBotDisplayName(undefined), undefined);
-});
-
-// ---------------------------------------------------------------------------
-// isBotUser
-// ---------------------------------------------------------------------------
-
-test("isBotUser: true for type Bot", () => {
-  assert.ok(isBotUser({ type: "Bot" }));
-});
-
-test("isBotUser: true for logins ending in [bot]", () => {
-  assert.ok(isBotUser({ login: "dependabot[bot]" }));
-});
-
-test("isBotUser: false for humans and missing users", () => {
-  // Note: the predicate is used for truthiness, so it may return undefined
-  // rather than a literal false for null-ish inputs.
-  assert.ok(!isBotUser({ type: "User", login: "david" }));
-  assert.ok(!isBotUser(null));
-  assert.ok(!isBotUser(undefined));
-  assert.ok(!isBotUser({}));
-});
+// getBotDisplayName / isBotUser / getBotKey moved to lib/ai-reviewers.js and
+// are covered in test/ai-reviewers.test.js.
 
 // ---------------------------------------------------------------------------
 // clampDescription
@@ -71,25 +29,6 @@ test("clampDescription: truncates 141+ chars to 140 with an ellipsis", () => {
   assert.equal(result.length, 140);
   assert.ok(result.endsWith("…"));
   assert.equal(result, "a".repeat(139) + "…");
-});
-
-// ---------------------------------------------------------------------------
-// getBotKey
-// ---------------------------------------------------------------------------
-
-test("getBotKey: extracts the provider key from a login", () => {
-  assert.equal(getBotKey("augmentcode[bot]"), "augment");
-  assert.equal(getBotKey("Copilot"), "copilot");
-  assert.equal(getBotKey("greptileai[bot]"), "greptile");
-  assert.equal(getBotKey("linearb-bot[bot]"), "linearb");
-  assert.equal(getBotKey("claude[bot]"), "claude");
-});
-
-test("getBotKey: null for unknown or missing logins", () => {
-  assert.equal(getBotKey("dependabot[bot]"), null);
-  assert.equal(getBotKey(null), null);
-  assert.equal(getBotKey(undefined), null);
-  assert.equal(getBotKey(""), null);
 });
 
 // ---------------------------------------------------------------------------

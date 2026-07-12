@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 
 import {
   KNOWN_PROVIDERS,
+  normalizeAutoReview,
   normalizeProviders,
   loadAiReviewConfig,
 } from "../lib/config.js";
@@ -128,4 +129,67 @@ test("loadAiReviewConfig: exposes a providers Set and isProviderEnabled()", asyn
   assert.ok(config.providers instanceof Set);
   assert.equal(typeof config.isProviderEnabled, "function");
   assert.ok(config.isProviderEnabled("greptile"));
+});
+
+// ---------------------------------------------------------------------------
+// normalizeAutoReview
+// ---------------------------------------------------------------------------
+
+test("normalizeAutoReview: defaults for missing or junk values", () => {
+  for (const raw of [undefined, null, {}, "nonsense", 42]) {
+    const result = normalizeAutoReview(raw);
+    assert.equal(result.enabled, true);
+    assert.equal(result.excludeRepos.size, 0);
+    assert.equal(result.excludeAuthors.size, 0);
+    assert.equal(result.minDiffSize, 0);
+    assert.equal(result.maxDiffSize, 2000);
+  }
+});
+
+test("normalizeAutoReview: enabled:false is the kill switch", () => {
+  assert.equal(normalizeAutoReview({ enabled: false }).enabled, false);
+  assert.equal(normalizeAutoReview({ enabled: true }).enabled, true);
+});
+
+test("normalizeAutoReview: exclusion lists are trimmed, lower-cased, cleaned", () => {
+  const result = normalizeAutoReview({
+    exclude_repos: ["  My-Repo ", "", 42, null],
+    exclude_authors: ["Dependabot[bot]", "  "],
+  });
+  assert.deepEqual([...result.excludeRepos], ["my-repo"]);
+  assert.deepEqual([...result.excludeAuthors], ["dependabot[bot]"]);
+});
+
+test("normalizeAutoReview: diff bounds accept valid numbers, including 0", () => {
+  const result = normalizeAutoReview({ min_diff_size: 5, max_diff_size: 100 });
+  assert.equal(result.minDiffSize, 5);
+  assert.equal(result.maxDiffSize, 100);
+  assert.equal(normalizeAutoReview({ max_diff_size: 0 }).maxDiffSize, 0);
+});
+
+test("normalizeAutoReview: invalid diff bounds fall back to defaults", () => {
+  for (const bad of ["500", -1, NaN, Infinity, {}, []]) {
+    const result = normalizeAutoReview({ min_diff_size: bad, max_diff_size: bad });
+    assert.equal(result.minDiffSize, 0, `min for ${String(bad)}`);
+    assert.equal(result.maxDiffSize, 2000, `max for ${String(bad)}`);
+  }
+});
+
+test("loadAiReviewConfig: exposes normalized autoReview settings", async () => {
+  const ctx = makeContext({
+    configValue: {
+      providers: ["claude"],
+      auto_review: { enabled: false, exclude_repos: ["Legacy-Repo"] },
+    },
+  });
+  const config = await loadAiReviewConfig(ctx);
+  assert.equal(config.autoReview.enabled, false);
+  assert.ok(config.autoReview.excludeRepos.has("legacy-repo"));
+});
+
+test("loadAiReviewConfig: autoReview defaults apply when the key is absent", async () => {
+  const ctx = makeContext({ configValue: { providers: ["claude"] } });
+  const config = await loadAiReviewConfig(ctx);
+  assert.equal(config.autoReview.enabled, true);
+  assert.equal(config.autoReview.maxDiffSize, 2000);
 });

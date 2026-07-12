@@ -7,10 +7,7 @@ import {
   TRIGGER_RANDOM_PHRASES,
   TRIGGER_LABEL,
   SKIP_TRIGGER_LABEL,
-  AI_REVIEW_TEAM,
-  AUGGIE_REVIEW_TEAM,
   ALREADY_TRIGGERING_AUGMENT_PHRASES,
-  isBotUser,
 } from "../lib/trigger-ai-review.js";
 
 // ---------------------------------------------------------------------------
@@ -49,23 +46,9 @@ test("TRIGGER_LABEL / SKIP_TRIGGER_LABEL: label gating", () => {
   assert.ok(SKIP_TRIGGER_LABEL.test("skip-ai-review"));
 });
 
-test("AI_REVIEW_TEAM / AUGGIE_REVIEW_TEAM: team slug matching", () => {
-  assert.ok(AI_REVIEW_TEAM.test("ai-review-team"));
-  assert.ok(AI_REVIEW_TEAM.test("AI Review"));
-  assert.ok(AUGGIE_REVIEW_TEAM.test("auggie-reviewers"));
-  assert.equal(AUGGIE_REVIEW_TEAM.test("backend-team"), false);
-});
-
 test("ALREADY_TRIGGERING_AUGMENT_PHRASES: recognises in-flight triggers", () => {
   assert.ok(ALREADY_TRIGGERING_AUGMENT_PHRASES.test("auggie review"));
   assert.ok(ALREADY_TRIGGERING_AUGMENT_PHRASES.test("augment review"));
   assert.ok(ALREADY_TRIGGERING_AUGMENT_PHRASES.test("augmentcode review"));
   assert.equal(ALREADY_TRIGGERING_AUGMENT_PHRASES.test("roast me auggie"), false);
-});
-
-test("isBotUser: bot detection", () => {
-  assert.ok(isBotUser({ type: "Bot" }));
-  assert.ok(isBotUser({ login: "x[bot]" }));
-  assert.ok(!isBotUser({ type: "User", login: "david" }));
-  assert.ok(!isBotUser(null));
 });
