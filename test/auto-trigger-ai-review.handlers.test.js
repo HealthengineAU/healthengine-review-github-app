@@ -7,8 +7,10 @@ import { makeApp, makeOctokit, makeContext } from "./helpers/mock-github.js";
 // The handlers build their own config via loadAiReviewConfig(context), which
 // reads the RAW YAML from context.config(). Only enabling copilot makes
 // triggerRandomReviewer deterministic (and timer-free) in the happy paths.
-function fakeConfig({ providers = ["copilot"], auto_review } = {}) {
-  return { providers, auto_review };
+// Automatic invites are opted into by default here — the opt-in default
+// itself is covered explicitly below.
+function fakeConfig({ providers = ["copilot"], ai_review } = {}) {
+  return { providers, ai_review: { automatic: true, ...ai_review } };
 }
 
 function makePayload(overrides = {}) {
@@ -58,7 +60,7 @@ async function dispatchAutoTrigger(t, { event = "pull_request.opened", payload, 
 // Cheap guards: no API traffic at all
 // ---------------------------------------------------------------------------
 
-test("auto-trigger: draft PRs are skipped", async (t) => {
+test("auto-trigger: draft PRs are skipped by default", async (t) => {
   const octokit = makeOctokit();
   await dispatchAutoTrigger(t, {
     octokit,
@@ -66,6 +68,16 @@ test("auto-trigger: draft PRs are skipped", async (t) => {
     payload: makePayload({ draft: true }),
   });
   assert.equal(octokit.calls.length, 0);
+});
+
+test("auto-trigger: ai_review.draft=true includes draft PRs", async (t) => {
+  const octokit = makeOctokit();
+  await dispatchAutoTrigger(t, {
+    octokit,
+    config: fakeConfig({ ai_review: { draft: true } }),
+    payload: makePayload({ draft: true }),
+  });
+  assert.equal(countCalls(octokit, "rest.pulls.requestReviewers"), 1);
 });
 
 test("auto-trigger: bot-authored PRs are skipped", async (t) => {
@@ -92,14 +104,24 @@ test("auto-trigger: the skip-ai-review label is respected", async (t) => {
 // Config gate
 // ---------------------------------------------------------------------------
 
-test("auto-trigger: auto_review.enabled=false turns the feature off", async (t) => {
-  const octokit = makeOctokit();
+test("auto-trigger: automatic invites are off unless opted in", async (t) => {
+  // No ai_review section at all…
+  const noConfigOctokit = makeOctokit();
   await dispatchAutoTrigger(t, {
-    octokit,
-    config: fakeConfig({ auto_review: { enabled: false } }),
+    octokit: noConfigOctokit,
+    config: { providers: ["copilot"] },
     payload: makePayload(),
   });
-  assert.equal(octokit.calls.length, 0);
+  assert.equal(noConfigOctokit.calls.length, 0);
+
+  // …and an explicit automatic: false both stay quiet.
+  const explicitOctokit = makeOctokit();
+  await dispatchAutoTrigger(t, {
+    octokit: explicitOctokit,
+    config: fakeConfig({ ai_review: { automatic: false } }),
+    payload: makePayload(),
+  });
+  assert.equal(explicitOctokit.calls.length, 0);
 });
 
 test("auto-trigger: no summonable providers means no evaluation fetches", async (t) => {
@@ -139,7 +161,7 @@ test("auto-trigger: branches patterns override the default list", async (t) => {
   const releaseOctokit = makeOctokit();
   await dispatchAutoTrigger(t, {
     octokit: releaseOctokit,
-    config: fakeConfig({ auto_review: { branches: ["Release/*"] } }),
+    config: fakeConfig({ ai_review: { branches: ["Release/*"] } }),
     payload: makePayload({ base: { ref: "release/1.2" } }),
   });
   assert.equal(countCalls(releaseOctokit, "rest.pulls.requestReviewers"), 1);
@@ -148,7 +170,7 @@ test("auto-trigger: branches patterns override the default list", async (t) => {
   const mainOctokit = makeOctokit();
   await dispatchAutoTrigger(t, {
     octokit: mainOctokit,
-    config: fakeConfig({ auto_review: { branches: ["release/*"] } }),
+    config: fakeConfig({ ai_review: { branches: ["release/*"] } }),
     payload: makePayload({ base: { ref: "main" } }),
   });
   assert.equal(mainOctokit.calls.length, 0);
@@ -158,7 +180,7 @@ test("auto-trigger: negative branch patterns exclude", async (t) => {
   const keptOctokit = makeOctokit();
   await dispatchAutoTrigger(t, {
     octokit: keptOctokit,
-    config: fakeConfig({ auto_review: { branches: ["**", "!test/**"] } }),
+    config: fakeConfig({ ai_review: { branches: ["**", "!test/**"] } }),
     payload: makePayload({ base: { ref: "feature/x" } }),
   });
   assert.equal(countCalls(keptOctokit, "rest.pulls.requestReviewers"), 1);
@@ -166,7 +188,7 @@ test("auto-trigger: negative branch patterns exclude", async (t) => {
   const excludedOctokit = makeOctokit();
   await dispatchAutoTrigger(t, {
     octokit: excludedOctokit,
-    config: fakeConfig({ auto_review: { branches: ["**", "!test/**"] } }),
+    config: fakeConfig({ ai_review: { branches: ["**", "!test/**"] } }),
     payload: makePayload({ base: { ref: "test/scratch" } }),
   });
   assert.equal(excludedOctokit.calls.length, 0);
@@ -177,7 +199,7 @@ test("auto-trigger: repositories patterns are respected (case-insensitive)", asy
   await dispatchAutoTrigger(t, {
     octokit,
     repo: "excluded-repo",
-    config: fakeConfig({ auto_review: { repositories: ["*", "!Excluded-Repo"] } }),
+    config: fakeConfig({ ai_review: { repositories: ["*", "!Excluded-Repo"] } }),
     payload: makePayload(),
   });
   assert.equal(octokit.calls.length, 0);
@@ -187,7 +209,7 @@ test("auto-trigger: authors patterns are respected (case-insensitive)", async (t
   const octokit = makeOctokit();
   await dispatchAutoTrigger(t, {
     octokit,
-    config: fakeConfig({ auto_review: { authors: ["*", "!David"] } }),
+    config: fakeConfig({ ai_review: { authors: ["*", "!David"] } }),
     payload: makePayload(),
   });
   assert.equal(octokit.calls.length, 0);
@@ -197,7 +219,7 @@ test("auto-trigger: diffs below min_diff_size are skipped", async (t) => {
   const octokit = makeOctokit();
   await dispatchAutoTrigger(t, {
     octokit,
-    config: fakeConfig({ auto_review: { min_diff_size: 16 } }),
+    config: fakeConfig({ ai_review: { min_diff_size: 16 } }),
     payload: makePayload({ additions: 10, deletions: 5 }), // 15 < 16
   });
   assert.equal(octokit.calls.length, 0);

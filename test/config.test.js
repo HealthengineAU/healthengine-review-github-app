@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 
 import {
   KNOWN_PROVIDERS,
-  normalizeAutoReview,
+  normalizeAiReview,
   normalizeProviders,
   loadAiReviewConfig,
 } from "../lib/config.js";
@@ -133,13 +133,15 @@ test("loadAiReviewConfig: exposes a providers Set and isProviderEnabled()", asyn
 });
 
 // ---------------------------------------------------------------------------
-// normalizeAutoReview
+// normalizeAiReview
 // ---------------------------------------------------------------------------
 
-test("normalizeAutoReview: defaults for missing or junk values", () => {
+test("normalizeAiReview: defaults for missing or junk values", () => {
   for (const raw of [undefined, null, {}, "nonsense", 42]) {
-    const result = normalizeAutoReview(raw);
-    assert.equal(result.enabled, true);
+    const result = normalizeAiReview(raw);
+    // Automatic invites are opt-in, and drafts are excluded by default.
+    assert.equal(result.automatic, false);
+    assert.equal(result.draft, false);
     // Branches default to the mainline trio…
     for (const branch of ["master", "main", "develop"]) {
       assert.ok(matchesFilterPatterns(result.branches, branch), branch);
@@ -153,15 +155,15 @@ test("normalizeAutoReview: defaults for missing or junk values", () => {
   }
 });
 
-test("normalizeAutoReview: a pattern list replaces its default entirely", () => {
-  const result = normalizeAutoReview({ branches: ["Release/*", "  main "] });
+test("normalizeAiReview: a pattern list replaces its default entirely", () => {
+  const result = normalizeAiReview({ branches: ["Release/*", "  main "] });
   assert.ok(matchesFilterPatterns(result.branches, "release/1.2"));
   assert.ok(matchesFilterPatterns(result.branches, "main"));
   assert.equal(matchesFilterPatterns(result.branches, "develop"), false);
 });
 
-test("normalizeAutoReview: negative patterns exclude", () => {
-  const result = normalizeAutoReview({
+test("normalizeAiReview: negative patterns exclude", () => {
+  const result = normalizeAiReview({
     repositories: ["*", "!legacy-monolith"],
     authors: ["*", "!*-service-account"],
   });
@@ -171,9 +173,9 @@ test("normalizeAutoReview: negative patterns exclude", () => {
   assert.equal(matchesFilterPatterns(result.authors, "deploy-service-account"), false);
 });
 
-test("normalizeAutoReview: empty/invalid pattern lists fall back to defaults", () => {
+test("normalizeAiReview: empty/invalid pattern lists fall back to defaults", () => {
   for (const bad of [[], ["", 42, null], "main"]) {
-    const result = normalizeAutoReview({ branches: bad, repositories: bad, authors: bad });
+    const result = normalizeAiReview({ branches: bad, repositories: bad, authors: bad });
     assert.ok(matchesFilterPatterns(result.branches, "main"), `branches for ${JSON.stringify(bad)}`);
     assert.equal(matchesFilterPatterns(result.branches, "feature/x"), false);
     assert.ok(matchesFilterPatterns(result.repositories, "any-repo"), `repos for ${JSON.stringify(bad)}`);
@@ -181,50 +183,59 @@ test("normalizeAutoReview: empty/invalid pattern lists fall back to defaults", (
   }
 });
 
-test("normalizeAutoReview: enabled:false is the kill switch", () => {
-  assert.equal(normalizeAutoReview({ enabled: false }).enabled, false);
-  assert.equal(normalizeAutoReview({ enabled: true }).enabled, true);
+test("normalizeAiReview: automatic is a strict opt-in", () => {
+  assert.equal(normalizeAiReview({ automatic: true }).automatic, true);
+  for (const raw of [{}, { automatic: false }, { automatic: "yes" }, { automatic: 1 }]) {
+    assert.equal(normalizeAiReview(raw).automatic, false, JSON.stringify(raw));
+  }
 });
 
-test("normalizeAutoReview: pattern entries are trimmed and junk is dropped", () => {
-  const result = normalizeAutoReview({
+test("normalizeAiReview: drafts are excluded unless draft: true", () => {
+  assert.equal(normalizeAiReview({ draft: true }).draft, true);
+  for (const raw of [{}, { draft: false }, { draft: "yes" }]) {
+    assert.equal(normalizeAiReview(raw).draft, false, JSON.stringify(raw));
+  }
+});
+
+test("normalizeAiReview: pattern entries are trimmed and junk is dropped", () => {
+  const result = normalizeAiReview({
     repositories: ["  My-Repo ", "", 42, null],
   });
   assert.ok(matchesFilterPatterns(result.repositories, "my-repo"));
   assert.equal(matchesFilterPatterns(result.repositories, "other-repo"), false);
 });
 
-test("normalizeAutoReview: diff bounds accept valid numbers, including 0", () => {
-  const result = normalizeAutoReview({ min_diff_size: 5, max_diff_size: 100 });
+test("normalizeAiReview: diff bounds accept valid numbers, including 0", () => {
+  const result = normalizeAiReview({ min_diff_size: 5, max_diff_size: 100 });
   assert.equal(result.minDiffSize, 5);
   assert.equal(result.maxDiffSize, 100);
-  assert.equal(normalizeAutoReview({ max_diff_size: 0 }).maxDiffSize, 0);
+  assert.equal(normalizeAiReview({ max_diff_size: 0 }).maxDiffSize, 0);
 });
 
-test("normalizeAutoReview: invalid diff bounds fall back to defaults", () => {
+test("normalizeAiReview: invalid diff bounds fall back to defaults", () => {
   for (const bad of ["500", -1, NaN, Infinity, {}, []]) {
-    const result = normalizeAutoReview({ min_diff_size: bad, max_diff_size: bad });
+    const result = normalizeAiReview({ min_diff_size: bad, max_diff_size: bad });
     assert.equal(result.minDiffSize, 0, `min for ${String(bad)}`);
     assert.equal(result.maxDiffSize, 2000, `max for ${String(bad)}`);
   }
 });
 
-test("loadAiReviewConfig: exposes normalized autoReview settings", async () => {
+test("loadAiReviewConfig: exposes normalized aiReview settings", async () => {
   const ctx = makeContext({
     configValue: {
       providers: ["claude"],
-      auto_review: { enabled: false, repositories: ["*", "!Legacy-Repo"] },
+      ai_review: { automatic: true, repositories: ["*", "!Legacy-Repo"] },
     },
   });
   const config = await loadAiReviewConfig(ctx);
-  assert.equal(config.autoReview.enabled, false);
-  assert.ok(matchesFilterPatterns(config.autoReview.repositories, "some-repo"));
-  assert.equal(matchesFilterPatterns(config.autoReview.repositories, "legacy-repo"), false);
+  assert.equal(config.aiReview.automatic, true);
+  assert.ok(matchesFilterPatterns(config.aiReview.repositories, "some-repo"));
+  assert.equal(matchesFilterPatterns(config.aiReview.repositories, "legacy-repo"), false);
 });
 
-test("loadAiReviewConfig: autoReview defaults apply when the key is absent", async () => {
+test("loadAiReviewConfig: aiReview defaults apply when the key is absent", async () => {
   const ctx = makeContext({ configValue: { providers: ["claude"] } });
   const config = await loadAiReviewConfig(ctx);
-  assert.equal(config.autoReview.enabled, true);
-  assert.equal(config.autoReview.maxDiffSize, 2000);
+  assert.equal(config.aiReview.automatic, false);
+  assert.equal(config.aiReview.maxDiffSize, 2000);
 });

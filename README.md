@@ -20,15 +20,16 @@
   - Commenting `ai review` (or `<provider> review` for a specific bot)
   - Requesting review from teams named `HealthengineAU/AI Review` or `HealthengineAU/<provider>`
   - Labelling a pull request with `ai-review` label
-- Automatically invites a random AI reviewer:
-  - When a pull request is opened (non-draft), marked ready for review, or reopened
+- Automatically invites a random AI reviewer (opt-in via `ai_review.automatic`):
+  - When a pull request is opened, marked ready for review, or reopened
   - Only when the PR has no completed AI review and no pending AI review
     request (a requested Copilot, an Auggie summon, an AI-review team request,
     or an incoming LinearB review — detected via a present, non-failing
     `gitStream.cm` commit status)
   - Evaluated ~30s after the PR event so gitStream's status has time to land
-  - Skips drafts, bot authors, and PRs labelled `skip-ai-review`
-  - Configurable via `auto_review` (see below): target branches, repos, and
+  - Skips bot authors, PRs labelled `skip-ai-review`, and drafts (unless
+    `ai_review.draft: true`)
+  - Configurable via `ai_review` (see below): target branches, repos, and
     authors as GitHub-Actions-style filter patterns, plus min/max diff size
     (defaults 0–2000 changed lines)
 - Cleans up AI reviewer comments:
@@ -61,14 +62,15 @@ providers:
   - greptile
   - linearb
 
-# automatic review invites (all keys optional; defaults shown)
+# AI review settings (all keys optional; defaults shown)
 #
 # branches / repositories / authors take GitHub-Actions-style filter patterns:
 # `*` (segment wildcard), `**` (spans "/", for branch names), and `!` to
 # negate a previous match — evaluated in order, last match wins.
 # Quote patterns that start with * or ! (YAML special characters).
-auto_review:
-  enabled: true         # kill switch for automatic invites
+ai_review:
+  automatic: false      # set true to auto-invite a reviewer on eligible PRs
+  draft: false          # set true to also invite on draft PRs
   branches:             # base branches whose PRs are invited
     - master
     - main
