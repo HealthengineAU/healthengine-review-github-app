@@ -168,10 +168,10 @@ test("issue_comment: Auggie summon survives failing comment edits", async (t) =>
   });
   await dispatch("issue_comment.created", context);
 
-  // Fire the +5s marker edit and the +12s acknowledgement check; both hit the
+  // Fire the +10s marker edit and the +20s acknowledgement check; both hit the
   // failing updateComment and must be caught + logged, not left as unhandled
   // rejections (which would crash the process).
-  t.mock.timers.tick(13_000);
+  t.mock.timers.tick(21_000);
   for (let i = 0; i < 20; i++) await Promise.resolve();
 
   assert.equal(errors.mock.callCount(), 2);
