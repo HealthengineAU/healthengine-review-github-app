@@ -9,8 +9,8 @@ import { makeApp, makeOctokit, makeContext } from "./helpers/mock-github.js";
 // triggerRandomReviewer deterministic (and timer-free) in the happy paths.
 // Automatic invites are opted into by default here — the opt-in default
 // itself is covered explicitly below.
-function fakeConfig({ providers = ["copilot"], ai_review, ...rest } = {}) {
-  return { providers, ai_review: { automatic: true, ...ai_review }, ...rest };
+function fakeConfig({ providers = ["copilot"], ai_review } = {}) {
+  return { providers, ai_review: { automatic: true, ...ai_review } };
 }
 
 function makePayload(overrides = {}) {
@@ -90,12 +90,12 @@ test("auto-trigger: dependabot-authored PRs are skipped by default", async (t) =
   assert.equal(octokit.calls.length, 0);
 });
 
-test("auto-trigger: skip_authors config replaces the default skip list", async (t) => {
+test("auto-trigger: ai_review.skip_authors replaces the default skip list", async (t) => {
   // dependabot is no longer on the list → it gets the normal invite flow…
   const octokit = makeOctokit();
   await dispatchAutoTrigger(t, {
     octokit,
-    config: fakeConfig({ skip_authors: ["renovate[bot]"] }),
+    config: fakeConfig({ ai_review: { skip_authors: ["renovate[bot]"] } }),
     payload: makePayload({ user: { login: "dependabot[bot]", type: "Bot" } }),
   });
   assert.equal(countCalls(octokit, "rest.pulls.requestReviewers"), 1);
@@ -104,7 +104,7 @@ test("auto-trigger: skip_authors config replaces the default skip list", async (
   const skippedOctokit = makeOctokit();
   await dispatchAutoTrigger(t, {
     octokit: skippedOctokit,
-    config: fakeConfig({ skip_authors: ["renovate[bot]"] }),
+    config: fakeConfig({ ai_review: { skip_authors: ["renovate[bot]"] } }),
     payload: makePayload({ user: { login: "Renovate[bot]", type: "Bot" } }),
   });
   assert.equal(skippedOctokit.calls.length, 0);

@@ -155,10 +155,10 @@ test("normalizeSkipAuthors: lower-cases, trims, and drops junk entries", () => {
   assert.deepEqual([...result].sort(), ["dependabot[bot]", "renovate[bot]"]);
 });
 
-test("loadAiReviewConfig: skip_authors defaults to dependabot[bot]", async () => {
+test("loadAiReviewConfig: ai_review.skip_authors defaults to dependabot[bot]", async () => {
   const ctx = makeContext({ configValue: null });
   const config = await loadAiReviewConfig(ctx);
-  assert.deepEqual([...config.skipAuthors], ["dependabot[bot]"]);
+  assert.deepEqual([...config.aiReview.skipAuthors], ["dependabot[bot]"]);
   assert.ok(config.isAuthorSkipped("dependabot[bot]"));
   assert.ok(config.isAuthorSkipped("Dependabot[bot]"));
   assert.equal(config.isAuthorSkipped("renovate[bot]"), false);
@@ -167,18 +167,20 @@ test("loadAiReviewConfig: skip_authors defaults to dependabot[bot]", async () =>
   assert.equal(config.isAuthorSkipped(undefined), false);
 });
 
-test("loadAiReviewConfig: skip_authors from the config file replaces the default", async () => {
-  const ctx = makeContext({ configValue: { skip_authors: ["renovate[bot]", "deploy-bot"] } });
+test("loadAiReviewConfig: ai_review.skip_authors replaces the default", async () => {
+  const ctx = makeContext({
+    configValue: { ai_review: { skip_authors: ["renovate[bot]", "deploy-bot"] } },
+  });
   const config = await loadAiReviewConfig(ctx);
   assert.ok(config.isAuthorSkipped("renovate[bot]"));
   assert.ok(config.isAuthorSkipped("Deploy-Bot"));
   assert.equal(config.isAuthorSkipped("dependabot[bot]"), false);
 });
 
-test("loadAiReviewConfig: skip_authors [] disables the skip entirely", async () => {
-  const ctx = makeContext({ configValue: { skip_authors: [] } });
+test("loadAiReviewConfig: ai_review.skip_authors [] disables the skip entirely", async () => {
+  const ctx = makeContext({ configValue: { ai_review: { skip_authors: [] } } });
   const config = await loadAiReviewConfig(ctx);
-  assert.equal(config.skipAuthors.size, 0);
+  assert.equal(config.aiReview.skipAuthors.size, 0);
   assert.equal(config.isAuthorSkipped("dependabot[bot]"), false);
 });
 

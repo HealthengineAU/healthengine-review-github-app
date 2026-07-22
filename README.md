@@ -78,6 +78,8 @@ ai_review:
     - develop
   repositories: ["*"]    # e.g. ["*", "!legacy-monolith"]
   authors: ["*"]         # e.g. ["*", "!*-service-account"]
+  skip_authors:          # PR authors whose PRs skip AI review entirely
+    - "dependabot[bot]"  # (exact logins, case-insensitive; [] to skip no one)
   min_diff_size: 0       # inclusive bounds on additions + deletions;
   max_diff_size: 2000    # PRs outside the range aren't auto-invited
 ```

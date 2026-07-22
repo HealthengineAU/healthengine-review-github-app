@@ -82,7 +82,7 @@ test("skip_authors config replaces the default skip list", async (t) => {
   const octokit = makeOctokit();
   const context = makeContext({
     octokit,
-    config: { skip_authors: ["renovate[bot]"] },
+    config: { ai_review: { skip_authors: ["renovate[bot]"] } },
     payload: {
       pull_request: {
         number: 1,
