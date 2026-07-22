@@ -15,7 +15,8 @@
     summoned (via any trigger below, a requested Copilot reviewer, or a
     human-typed `auggie review` comment), then flips to `Reviewed by …`
   - Tracks whether AI feedback has been addressed (i.e. resolved, responded to, is now outdated)
-  - Can be skipped with `skip-ai-review` label
+  - Can be skipped with `skip-ai-review` label, or for specific PR authors via
+    `ai_review.skip_authors` (default `dependabot[bot]`)
 - Triggers AI reviews:
   - Commenting `ai review` (or `<provider> review` for a specific bot)
   - Requesting review from teams named `HealthengineAU/AI Review` or `HealthengineAU/<provider>`
@@ -27,8 +28,8 @@
     or an incoming LinearB review — detected via a present, non-failing
     `gitStream.cm` commit status)
   - Evaluated ~30s after the PR event so gitStream's status has time to land
-  - Skips bot authors, PRs labelled `skip-ai-review`, and drafts (unless
-    `ai_review.include_drafts: true`)
+  - Skips authors listed in `ai_review.skip_authors` (default `dependabot[bot]`),
+    PRs labelled `skip-ai-review`, and drafts (unless `ai_review.include_drafts: true`)
   - Configurable via `ai_review` (see below): target branches, repos, and
     authors as GitHub-Actions-style filter patterns, plus min/max diff size
     (defaults 0–2000 changed lines)

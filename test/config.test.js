@@ -5,6 +5,7 @@ import {
   KNOWN_PROVIDERS,
   normalizeAiReview,
   normalizeProviders,
+  normalizeSkipAuthors,
   loadAiReviewConfig,
 } from "../lib/config.js";
 import { matchesFilterPatterns } from "../lib/filter-patterns.js";
@@ -130,6 +131,55 @@ test("loadAiReviewConfig: exposes a providers Set and isProviderEnabled()", asyn
   assert.ok(config.providers instanceof Set);
   assert.equal(typeof config.isProviderEnabled, "function");
   assert.ok(config.isProviderEnabled("greptile"));
+});
+
+// ---------------------------------------------------------------------------
+// normalizeSkipAuthors
+// ---------------------------------------------------------------------------
+
+test("normalizeSkipAuthors: returns null for non-arrays", () => {
+  assert.equal(normalizeSkipAuthors(undefined), null);
+  assert.equal(normalizeSkipAuthors(null), null);
+  assert.equal(normalizeSkipAuthors("dependabot[bot]"), null);
+  assert.equal(normalizeSkipAuthors({}), null);
+});
+
+test("normalizeSkipAuthors: an explicit empty list means skip no one", () => {
+  const result = normalizeSkipAuthors([]);
+  assert.ok(result instanceof Set);
+  assert.equal(result.size, 0);
+});
+
+test("normalizeSkipAuthors: lower-cases, trims, and drops junk entries", () => {
+  const result = normalizeSkipAuthors(["  Dependabot[bot] ", "RENOVATE[bot]", "", 42, null]);
+  assert.deepEqual([...result].sort(), ["dependabot[bot]", "renovate[bot]"]);
+});
+
+test("loadAiReviewConfig: skip_authors defaults to dependabot[bot]", async () => {
+  const ctx = makeContext({ configValue: null });
+  const config = await loadAiReviewConfig(ctx);
+  assert.deepEqual([...config.skipAuthors], ["dependabot[bot]"]);
+  assert.ok(config.isAuthorSkipped("dependabot[bot]"));
+  assert.ok(config.isAuthorSkipped("Dependabot[bot]"));
+  assert.equal(config.isAuthorSkipped("renovate[bot]"), false);
+  assert.equal(config.isAuthorSkipped("david"), false);
+  assert.equal(config.isAuthorSkipped(null), false);
+  assert.equal(config.isAuthorSkipped(undefined), false);
+});
+
+test("loadAiReviewConfig: skip_authors from the config file replaces the default", async () => {
+  const ctx = makeContext({ configValue: { skip_authors: ["renovate[bot]", "deploy-bot"] } });
+  const config = await loadAiReviewConfig(ctx);
+  assert.ok(config.isAuthorSkipped("renovate[bot]"));
+  assert.ok(config.isAuthorSkipped("Deploy-Bot"));
+  assert.equal(config.isAuthorSkipped("dependabot[bot]"), false);
+});
+
+test("loadAiReviewConfig: skip_authors [] disables the skip entirely", async () => {
+  const ctx = makeContext({ configValue: { skip_authors: [] } });
+  const config = await loadAiReviewConfig(ctx);
+  assert.equal(config.skipAuthors.size, 0);
+  assert.equal(config.isAuthorSkipped("dependabot[bot]"), false);
 });
 
 // ---------------------------------------------------------------------------

@@ -48,7 +48,7 @@ test("skip-ai-review label short-circuits to a success status", async (t) => {
   assert.equal(octokit.calls.some((c) => c.method === "graphql"), false);
 });
 
-test("a bot-authored PR skips the AI review with a success status", async (t) => {
+test("a dependabot-authored PR skips the AI review by default with a success status", async (t) => {
   t.mock.timers.enable({ apis: ["setTimeout"] });
   const { app, dispatch } = makeApp();
   register(app);
@@ -73,6 +73,61 @@ test("a bot-authored PR skips the AI review with a success status", async (t) =>
   assert.equal(statuses.length, 1);
   assert.equal(statuses[0].args.state, "success");
   assert.match(statuses[0].args.description, /skipped for author/i);
+});
+
+test("skip_authors config replaces the default skip list", async (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  const { app, dispatch } = makeApp();
+  register(app);
+  const octokit = makeOctokit();
+  const context = makeContext({
+    octokit,
+    config: { skip_authors: ["renovate[bot]"] },
+    payload: {
+      pull_request: {
+        number: 1,
+        state: "open",
+        head: { sha: "abc123" },
+        user: { login: "Renovate[bot]", type: "Bot" },
+        labels: [],
+      },
+    },
+  });
+
+  await dispatch("pull_request.opened", context);
+  await flushDebounce(t);
+
+  const statuses = statusCalls(octokit);
+  assert.equal(statuses.length, 1);
+  assert.equal(statuses[0].args.state, "success");
+  assert.match(statuses[0].args.description, /skipped for author/i);
+});
+
+test("a bot author not on the skip list gets the normal review flow", async (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  const { app, dispatch } = makeApp();
+  register(app);
+  const octokit = makeOctokit();
+  const context = makeContext({
+    octokit,
+    payload: {
+      pull_request: {
+        number: 1,
+        state: "open",
+        head: { sha: "abc123" },
+        user: { login: "renovate[bot]", type: "Bot" },
+        labels: [],
+      },
+    },
+  });
+
+  await dispatch("pull_request.opened", context);
+  await flushDebounce(t);
+
+  // No skip short-circuit: it proceeds to the review/comment fetches (and,
+  // with no bot activity, posts no status at all).
+  assert.equal(octokit.calls.some((c) => c.method === "graphql"), true);
+  assert.equal(statusCalls(octokit).length, 0);
 });
 
 test("a closed PR produces no status update", async (t) => {
