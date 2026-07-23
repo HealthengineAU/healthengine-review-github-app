@@ -4,6 +4,7 @@ import assert from "node:assert/strict";
 import {
   KNOWN_PROVIDERS,
   normalizeAiReview,
+  normalizeBotPrHumanApprovers,
   normalizeProviders,
   normalizeSkipAuthors,
   loadAiReviewConfig,
@@ -270,6 +271,56 @@ test("normalizeAiReview: invalid diff bounds fall back to defaults", () => {
     assert.equal(result.minDiffSize, 0, `min for ${String(bad)}`);
     assert.equal(result.maxDiffSize, 2000, `max for ${String(bad)}`);
   }
+});
+
+// ---------------------------------------------------------------------------
+// normalizeBotPrHumanApprovers
+// ---------------------------------------------------------------------------
+
+test("normalizeBotPrHumanApprovers: defaults for missing or junk values", () => {
+  for (const raw of [undefined, null, {}, "nonsense", 42, []]) {
+    const result = normalizeBotPrHumanApprovers(raw);
+    assert.equal(result.min, 2, JSON.stringify(raw));
+    assert.deepEqual([...result.exclude], ["dependabot[bot]"], JSON.stringify(raw));
+  }
+});
+
+test("normalizeBotPrHumanApprovers: accepts valid min, including 0", () => {
+  assert.equal(normalizeBotPrHumanApprovers({ min: 2 }).min, 2);
+  assert.equal(normalizeBotPrHumanApprovers({ min: 0 }).min, 0);
+});
+
+test("normalizeBotPrHumanApprovers: invalid min falls back to 2", () => {
+  for (const bad of ["2", -1, NaN, Infinity, {}, [], null]) {
+    assert.equal(normalizeBotPrHumanApprovers({ min: bad }).min, 2, String(bad));
+  }
+});
+
+test("normalizeBotPrHumanApprovers: exclude replaces the default, lower-cased", () => {
+  const result = normalizeBotPrHumanApprovers({ exclude: ["  Renovate[bot] ", "", 42] });
+  assert.deepEqual([...result.exclude], ["renovate[bot]"]);
+});
+
+test("normalizeBotPrHumanApprovers: an explicit empty exclude means no exemptions", () => {
+  const result = normalizeBotPrHumanApprovers({ exclude: [] });
+  assert.equal(result.exclude.size, 0);
+});
+
+test("normalizeAiReview: exposes botPrHumanApprovers with defaults", () => {
+  const result = normalizeAiReview({});
+  assert.equal(result.botPrHumanApprovers.min, 2);
+  assert.deepEqual([...result.botPrHumanApprovers.exclude], ["dependabot[bot]"]);
+});
+
+test("loadAiReviewConfig: exposes ai_review.bot_pr_human_approvers", async () => {
+  const ctx = makeContext({
+    configValue: {
+      ai_review: { bot_pr_human_approvers: { min: 2, exclude: ["renovate[bot]"] } },
+    },
+  });
+  const config = await loadAiReviewConfig(ctx);
+  assert.equal(config.aiReview.botPrHumanApprovers.min, 2);
+  assert.deepEqual([...config.aiReview.botPrHumanApprovers.exclude], ["renovate[bot]"]);
 });
 
 test("loadAiReviewConfig: exposes normalized aiReview settings", async () => {

@@ -17,6 +17,8 @@
   - Tracks whether AI feedback has been addressed (i.e. resolved, responded to, is now outdated)
   - Can be skipped with `skip-ai-review` label, or for specific PR authors via
     `ai_review.skip_authors` (default `dependabot[bot]`)
+  - Holds bot-authored PRs at pending until enough humans have approved
+    (`ai_review.bot_pr_human_approvers`, default 2; `exclude` exempts specific bots)
 - Triggers AI reviews:
   - Commenting `ai review` (or `<provider> review` for a specific bot)
   - Requesting review from teams named `HealthengineAU/AI Review` or `HealthengineAU/<provider>`
@@ -86,6 +88,10 @@ ai_review:
     - "dependabot[bot]"  # (exact logins, case-insensitive; [] to skip no one)
   min_diff_size: 0       # inclusive bounds on additions + deletions;
   max_diff_size: 2000    # PRs outside the range aren't auto-invited
+  bot_pr_human_approvers:  # human approvals required on bot-authored PRs
+    min: 2                 # minimum number of human approvers
+    exclude:               # bot authors exempt from the requirement
+      - "dependabot[bot]"  # (exact logins, case-insensitive; [] for none)
 
 # Agent proxies (optional; omit the key entirely to disable).
 #
