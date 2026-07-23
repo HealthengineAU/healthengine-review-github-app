@@ -43,14 +43,20 @@ test("normalizeAgents: [] for non-arrays or empty", () => {
   assert.deepEqual(normalizeAgents([]), []);
 });
 
-test("normalizeAgents: drops entries missing name, bot, or a complete dispatch", () => {
+test("normalizeAgents: drops entries missing name, bot, or dispatch.{owner,repo}", () => {
   assert.equal(normalizeAgents([{ bot: "x[bot]", dispatch: RAW.dispatch }]).length, 0);
   assert.equal(normalizeAgents([{ name: "x", dispatch: RAW.dispatch }]).length, 0);
   assert.equal(normalizeAgents([{ name: "x", bot: "x[bot]" }]).length, 0);
   assert.equal(
-    normalizeAgents([{ name: "x", bot: "x[bot]", dispatch: { owner: "a", repo: "b" } }]).length,
+    normalizeAgents([{ name: "x", bot: "x[bot]", dispatch: { owner: "a" } }]).length,
     0,
   );
+});
+
+test("normalizeAgents: dispatch workflow and ref default to webhook_event.yml @ main", () => {
+  const a = normalizeAgents([{ ...RAW, dispatch: { owner: "acme", repo: "dusty" } }])[0];
+  assert.equal(a.dispatch.workflow, "webhook_event.yml");
+  assert.equal(a.dispatch.ref, "main");
 });
 
 test("normalizeAgents: compiles a valid agent with defaults", () => {
@@ -161,15 +167,16 @@ test("classifyComment: bots, ignore_users, the agent itself, and unmentioned for
 // classifyStatus
 // ---------------------------------------------------------------------------
 
-test("classifyStatus: a failing watched context forwards as a check", () => {
+test("classifyStatus: a settled watched context forwards as a check", () => {
   const a = agent();
   assert.equal(classifyStatus(a, { state: "failure", context: "buildkite/test" }), "check");
   assert.equal(classifyStatus(a, { state: "error", context: "buildkite/deploy" }), "check");
+  assert.equal(classifyStatus(a, { state: "success", context: "buildkite/test" }), "check");
 });
 
-test("classifyStatus: passing states or unwatched contexts are ignored", () => {
+test("classifyStatus: pending states or unwatched contexts are ignored", () => {
   const a = agent();
-  assert.equal(classifyStatus(a, { state: "success", context: "buildkite/test" }), null);
+  assert.equal(classifyStatus(a, { state: "pending", context: "buildkite/test" }), null);
   assert.equal(classifyStatus(a, { state: "failure", context: "netlify/deploy-preview" }), null);
 });
 

@@ -37,8 +37,7 @@
   - Removing links to unsupported features
   - Collapses summaries
 - Forwards activity to autonomous agent proxies (opt-in via `agents`):
-  - Wakes an agent when its own PRs receive a review, a comment, or a failing
-    watched check, and when it's `@`-mentioned on any PR
+  - Wakes an agent when its own PRs receive a review, a comment, or a completed/failed/errored status check, and when it's `@`-mentioned on any PR
   - Coalesces bursts (debounced) and pokes the agent via a `workflow_dispatch`
     to a target it configures — the app itself knows nothing about any agent
 
@@ -108,8 +107,8 @@ agents:
     dispatch:                 # where the agent gets poked (a workflow_dispatch)
       owner: HealthengineAU
       repo: my-agent
-      workflow: webhook_event.yml
-      ref: main
+      workflow: webhook_event.yml  # optional, defaults to webhook_event.yml
+      ref: main                    # optional, defaults to main
 ```
 
 For each configured agent the app forwards:
@@ -118,7 +117,8 @@ For each configured agent the app forwards:
   PRs. Reviews accept humans *and* bots (AI reviewers count); comments are
   humans-only, minus `ignore_users`. Approvals are ignored.
 - **mention** — a human `@`-mentioning the agent on any PR in the org.
-- **check** — a failing commit status matching `checks` on one of the agent's PRs.
+- **check** — a settled (non-pending) commit status matching `checks` on one of
+  the agent's PRs. The body carries the outcome, e.g. `failure: buildkite/test`.
 
 Each dispatch sends `{ event, repo, pr, actor, body }` as workflow inputs. What
 the agent does with them — and any authorization of `actor` — is the agent's own

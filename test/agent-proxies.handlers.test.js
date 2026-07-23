@@ -161,18 +161,18 @@ test("a failing buildkite status on a Dusty PR dispatches a check event", async 
   const calls = dispatches(octokit);
   assert.equal(calls.length, 1); // only the Dusty-owned PR
   assert.deepEqual(calls[0].args.inputs, {
-    event: "check", repo: "svc", pr: "20", actor: "buildkite[bot]", body: "failed: buildkite/test",
+    event: "check", repo: "svc", pr: "20", actor: "buildkite[bot]", body: "failure: buildkite/test",
   });
 });
 
-test("a passing status never looks up PRs", async (t) => {
+test("a pending status never looks up PRs", async (t) => {
   const octokit = makeOctokit();
   await fire(t, {
     event: "status",
     octokit,
     payload: {
       repository: { name: "svc" },
-      state: "success",
+      state: "pending",
       context: "buildkite/test",
       sha: "deadbeef",
     },
