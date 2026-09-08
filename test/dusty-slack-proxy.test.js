@@ -105,3 +105,9 @@ test("showWorking swallows a thrown transport error", async () => {
   const call = async () => { throw new Error("ECONNRESET"); };
   await assert.doesNotReject(showWorking({ channel: "C1", thread: "1.1", token: "xoxb-x", call }));
 });
+
+test("showWorking gives up rather than hanging when Slack does not answer", async () => {
+  // The real slackCall aborts at 5s; this asserts the caller survives whatever it returns.
+  const call = async () => { const e = new Error("The operation was aborted"); e.name = "TimeoutError"; throw e; };
+  await assert.doesNotReject(showWorking({ channel: "C1", thread: "1.1", token: "xoxb-x", call }));
+});
