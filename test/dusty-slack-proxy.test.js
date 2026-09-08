@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import crypto from "node:crypto";
 
-import { verifySlackSignature, classifyMention } from "../lib/dusty-slack-proxy.js";
+import { verifySlackSignature, classifyMention, showWorking } from "../lib/dusty-slack-proxy.js";
 
 const SECRET = "shhh";
 const sign = (rawBody, ts, secret = SECRET) =>
@@ -61,4 +61,47 @@ test("classifyMention ignores a foreign workspace", () => {
 test("classifyMention ignores non-app_mention events", () => {
   assert.equal(classifyMention({ type: "message", channel: "C1", ts: "1.1", user: "U9" }, {}), null);
   assert.equal(classifyMention(null, {}), null);
+});
+
+// --- showWorking -------------------------------------------------------------
+//
+// Pure decoration, so every failure mode here must be silent.
+
+test("showWorking joins before setting the bar — setStatus needs membership", async () => {
+  const calls = [];
+  const call = async (method, body) => { calls.push({ method, body }); return { ok: true }; };
+  await showWorking({ channel: "C1", thread: "1.1", token: "xoxb-x", call });
+  assert.deepEqual(calls.map((c) => c.method), ["conversations.join", "assistant.threads.setStatus"]);
+  assert.equal(calls[0].body.channel, "C1");
+  assert.deepEqual(calls[1].body, { channel_id: "C1", thread_ts: "1.1", status: "is working…" });
+});
+
+test("showWorking does nothing without a bot token", async () => {
+  const calls = [];
+  const call = async (method) => { calls.push(method); return { ok: true }; };
+  await showWorking({ channel: "C1", thread: "1.1", token: "", call });
+  assert.deepEqual(calls, []);
+});
+
+test("showWorking does nothing without Slack coords", async () => {
+  const calls = [];
+  const call = async (method) => { calls.push(method); return { ok: true }; };
+  await showWorking({ channel: "", thread: "1.1", token: "xoxb-x", call });
+  await showWorking({ channel: "C1", thread: "", token: "xoxb-x", call });
+  assert.deepEqual(calls, []);
+});
+
+test("showWorking still tries the bar when the join is refused", async () => {
+  const calls = [];
+  const call = async (method) => {
+    calls.push(method);
+    return method === "conversations.join" ? { ok: false, error: "method_not_supported_for_channel_type" } : { ok: true };
+  };
+  await showWorking({ channel: "C1", thread: "1.1", token: "xoxb-x", call });
+  assert.deepEqual(calls, ["conversations.join", "assistant.threads.setStatus"]);
+});
+
+test("showWorking swallows a thrown transport error", async () => {
+  const call = async () => { throw new Error("ECONNRESET"); };
+  await assert.doesNotReject(showWorking({ channel: "C1", thread: "1.1", token: "xoxb-x", call }));
 });
