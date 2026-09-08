@@ -22,6 +22,8 @@ projects:
         sync: false
       - key: SLACK_TEAM_ID
         sync: false
+      - key: SLACK_BOT_TOKEN
+        sync: false
       region: ohio
       buildCommand: npm install
       startCommand: npm run start
