@@ -21,7 +21,7 @@ function dustyConfig(enabled = ["dusty"]) {
       {
         name: "dusty",
         bot: "dusty-the-robot[bot]",
-        mention: "@HealthengineAU/dusty\\b",
+        mention: "@acme/dusty\\b",
         events: ["mention"],
         debounce_seconds: 0,
         dispatch: { owner: "HealthengineAU", repo: "dusty" },
@@ -325,7 +325,7 @@ test("review_requested: a 'dusty' team summons Dusty and leaves the request in p
 
   const comments = calls(octokit, "rest.issues.createComment");
   assert.equal(comments.length, 1);
-  assert.equal(comments[0].args.body, "@HealthengineAU/dusty review");
+  assert.equal(comments[0].args.body, "@acme/dusty review");
 
   // Bot-authored, so the comment can't wake Dusty — the summon dispatches too.
   const wakes = calls(octokit, "rest.actions.createWorkflowDispatch");
@@ -336,7 +336,7 @@ test("review_requested: a 'dusty' team summons Dusty and leaves the request in p
     repo: context.repo().repo,
     pr: "3",
     actor: "david",
-    body: "@HealthengineAU/dusty review",
+    body: "@acme/dusty review",
   });
 
   // Like Auggie, the team request stays until the review lands.

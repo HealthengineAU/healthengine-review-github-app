@@ -26,9 +26,9 @@
   - Commenting `ai review` (or `<provider> review` for a specific bot)
   - Requesting review from teams named `HealthengineAU/AI Review` or `HealthengineAU/<provider>`
   - Labelling a pull request with `ai-review` label
-  - Summoning Dusty posts `@HealthengineAU/dusty review` and wakes its agent
-    proxy as the person who asked — nothing outside this app watches for that
-    comment, and Dusty only takes a mention from an org member
+  - Summoning Dusty posts `@<org>/dusty review` and wakes its agent proxy as
+    the person who asked — nothing outside this app watches for that comment,
+    and Dusty only takes a mention from an org member
 - Automatically invites a random AI reviewer (opt-in via `ai_review.automatic`):
   - When a pull request is opened, marked ready for review, or reopened
   - Only when the PR has no completed AI review and no pending AI review

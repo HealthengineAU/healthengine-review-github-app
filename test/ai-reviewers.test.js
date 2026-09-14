@@ -112,6 +112,7 @@ test("summonCommandProvider: matches standalone summon commands", () => {
   assert.equal(summonCommandProvider("`auggie review`"), BOT.Augment);
   assert.equal(summonCommandProvider("augmentcode review"), BOT.Augment);
   assert.equal(summonCommandProvider("@HealthengineAU/dusty review"), BOT.Dusty);
+  assert.equal(summonCommandProvider("@acme/dusty review"), BOT.Dusty);
   assert.equal(summonCommandProvider("dusty review"), BOT.Dusty);
   assert.equal(summonCommandProvider("`@healthengineau/dusty review`"), BOT.Dusty);
 });
