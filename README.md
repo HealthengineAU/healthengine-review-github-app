@@ -28,7 +28,8 @@
   - Labelling a pull request with `ai-review` label
   - Summoning Dusty posts `@<org>/dusty review` and wakes its agent proxy as
     the person who asked — nothing outside this app watches for that comment,
-    and Dusty only takes a mention from an org member
+    and Dusty only takes a mention from an org member. Dusty is only summonable
+    where an `agents` entry can reach it, whatever `providers` says
 - Automatically invites a random AI reviewer (opt-in via `ai_review.automatic`):
   - When a pull request is opened, marked ready for review, or reopened
   - Only when the PR has no completed AI review and no pending AI review
@@ -49,6 +50,9 @@
   - Wakes an agent when its own PRs receive a review, a comment, or a failed/errored status check, and when it's `@`-mentioned on any PR
   - Coalesces bursts (debounced) and pokes the agent via a `workflow_dispatch`
     to a target it configures — the app itself knows nothing about any agent
+  - Answers every comment that wakes an agent with 👀 on arrival, swapped for 👍
+    once the wake is queued. A comment on an issue in the agent's own repo —
+    which it watches itself — goes straight to 👍. It means "received", not "done"
 
 ## Tests
 
@@ -71,7 +75,7 @@ Use the [.github/healthengine-review.yml](https://github.com/HealthengineAU/.git
 # supported: augment, claude, copilot, dusty, greptile, linearb
 #
 # `dusty` also needs an `agents` entry named `dusty` below — that's how the
-# summon reaches it.
+# summon reaches it. Without one it is never summoned, listed here or not.
 providers:
   - augment
   - claude

@@ -81,6 +81,7 @@ export function makeOctokit(responses = {}) {
       },
       reactions: {
         createForIssueComment: record("rest.reactions.createForIssueComment"),
+        deleteForIssueComment: record("rest.reactions.deleteForIssueComment"),
         listForIssueComment: tag("rest.reactions.listForIssueComment"),
       },
     },

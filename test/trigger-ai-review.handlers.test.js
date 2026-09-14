@@ -409,6 +409,48 @@ test("review submitted: a human whose login contains a provider key clears nothi
   assert.equal(octokit.calls.length, 0);
 });
 
+test("review_requested: a 'dusty' team with no agent proxy is treated as unavailable", async () => {
+  const { app, dispatch } = makeApp();
+  register(app);
+  const octokit = makeOctokit();
+  const context = makeContext({
+    octokit,
+    // Enabled in `providers` — which is how the no-config default arrives — but
+    // with no `agents` entry there is nothing to summon.
+    config: { providers: ["dusty"] },
+    payload: {
+      pull_request: { number: 3 },
+      requested_team: { slug: "dusty", name: "Dusty" },
+      sender: { login: "david" },
+    },
+  });
+  await dispatch("pull_request.review_requested", context);
+  await new Promise((resolve) => setTimeout(resolve, 1));
+
+  assert.equal(countCalls(octokit, "pulls.removeRequestedReviewers"), 1);
+  assert.equal(countCalls(octokit, "rest.actions.createWorkflowDispatch"), 0);
+  assert.match(calls(octokit, "rest.issues.createComment")[0].args.body, /not currently available/);
+});
+
+test("issue_comment: 'ai review' summons nothing when the only provider is unreachable", async () => {
+  const { app, dispatch } = makeApp();
+  register(app);
+  const octokit = makeOctokit();
+  const context = makeContext({
+    octokit,
+    config: { providers: ["dusty"] },
+    payload: {
+      issue: { number: 7, pull_request: {} },
+      comment: { id: 5, body: "ai review", user: { type: "User" } },
+    },
+  });
+  await dispatch("issue_comment.created", context);
+  await new Promise((resolve) => setTimeout(resolve, 1));
+
+  assert.equal(countCalls(octokit, "rest.issues.createComment"), 0);
+  assert.equal(countCalls(octokit, "rest.actions.createWorkflowDispatch"), 0);
+});
+
 test("review_requested: an 'ai-review' team clears the request and triggers a review", async () => {
   const { app, dispatch } = makeApp();
   register(app);
