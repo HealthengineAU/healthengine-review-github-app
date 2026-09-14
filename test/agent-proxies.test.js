@@ -6,6 +6,7 @@ import {
   classifyReview,
   classifyComment,
   classifyStatus,
+  classifyOwnIssueComment,
 } from "../lib/agent-proxies.js";
 
 // normalizeAgents warns on malformed entries; silence the expected noise.
@@ -183,4 +184,36 @@ test("classifyStatus: passing/pending states or unwatched contexts are ignored",
 test("classifyStatus: null when check events are disabled", () => {
   const a = normalizeAgents([{ ...RAW, events: ["review"] }])[0];
   assert.equal(classifyStatus(a, { state: "failure", context: "buildkite/test" }), null);
+});
+
+// ---------------------------------------------------------------------------
+// classifyOwnIssueComment
+// ---------------------------------------------------------------------------
+
+const ownIssue = {
+  owner: "acme",
+  repo: "dusty",
+  issueState: "open",
+  commentAuthor: "david",
+  isBot: false,
+};
+
+test("classifyOwnIssueComment: a human reply in the agent's own repo is acked", () => {
+  assert.equal(classifyOwnIssueComment(agent(), ownIssue), "ack");
+  assert.equal(classifyOwnIssueComment(agent(), { ...ownIssue, owner: "ACME", repo: "Dusty" }), "ack");
+});
+
+test("classifyOwnIssueComment: other repos, closed issues, bots and ignored users are not", () => {
+  const a = agent();
+  assert.equal(classifyOwnIssueComment(a, { ...ownIssue, repo: "svc" }), null);
+  assert.equal(classifyOwnIssueComment(a, { ...ownIssue, owner: "someone-else" }), null);
+  assert.equal(classifyOwnIssueComment(a, { ...ownIssue, issueState: "closed" }), null);
+  assert.equal(classifyOwnIssueComment(a, { ...ownIssue, isBot: true }), null);
+  assert.equal(classifyOwnIssueComment(a, { ...ownIssue, commentAuthor: "dusty-the-robot[bot]" }), null);
+  assert.equal(classifyOwnIssueComment(a, { ...ownIssue, commentAuthor: "healthengine-sre" }), null);
+});
+
+test("classifyOwnIssueComment: null when comment events are disabled", () => {
+  const a = normalizeAgents([{ ...RAW, events: ["check"] }])[0];
+  assert.equal(classifyOwnIssueComment(a, ownIssue), null);
 });
