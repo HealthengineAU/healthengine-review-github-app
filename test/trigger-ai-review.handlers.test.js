@@ -12,8 +12,30 @@ function fakeConfig(enabled = KNOWN_PROVIDERS) {
   return { providers: [...enabled] };
 }
 
+// Dusty needs an agent proxy to wake as well as the provider being enabled.
+// debounce_seconds: 0 so the wake lands on the next tick.
+function dustyConfig(enabled = ["dusty"]) {
+  return {
+    providers: [...enabled],
+    agents: [
+      {
+        name: "dusty",
+        bot: "dusty-the-robot[bot]",
+        mention: "@HealthengineAU/dusty\\b",
+        events: ["mention"],
+        debounce_seconds: 0,
+        dispatch: { owner: "HealthengineAU", repo: "dusty" },
+      },
+    ],
+  };
+}
+
 function countCalls(octokit, method) {
   return octokit.calls.filter((c) => c.method === method).length;
+}
+
+function calls(octokit, method) {
+  return octokit.calls.filter((c) => c.method === method);
 }
 
 // ---------------------------------------------------------------------------
@@ -282,6 +304,108 @@ test("review_requested: an unrelated team is ignored", async () => {
     },
   });
   await dispatch("pull_request.review_requested", context);
+  assert.equal(octokit.calls.length, 0);
+});
+
+test("review_requested: a 'dusty' team summons Dusty and leaves the request in place", async () => {
+  const { app, dispatch } = makeApp();
+  register(app);
+  const octokit = makeOctokit();
+  const context = makeContext({
+    octokit,
+    config: dustyConfig(),
+    payload: {
+      pull_request: { number: 3 },
+      requested_team: { slug: "dusty", name: "Dusty" },
+      sender: { login: "david" },
+    },
+  });
+  await dispatch("pull_request.review_requested", context);
+  await new Promise((resolve) => setTimeout(resolve, 1));
+
+  const comments = calls(octokit, "rest.issues.createComment");
+  assert.equal(comments.length, 1);
+  assert.equal(comments[0].args.body, "@HealthengineAU/dusty review");
+
+  // Bot-authored, so the comment can't wake Dusty — the summon dispatches too.
+  const wakes = calls(octokit, "rest.actions.createWorkflowDispatch");
+  assert.equal(wakes.length, 1);
+  assert.equal(wakes[0].args.repo, "dusty");
+  assert.deepEqual(wakes[0].args.inputs, {
+    event: "mention",
+    repo: context.repo().repo,
+    pr: "3",
+    actor: "david",
+    body: "@HealthengineAU/dusty review",
+  });
+
+  // Like Auggie, the team request stays until the review lands.
+  assert.equal(countCalls(octokit, "pulls.removeRequestedReviewers"), 0);
+});
+
+test("review_requested: a 'dusty' team with Dusty disabled clears the request and explains", async () => {
+  const { app, dispatch } = makeApp();
+  register(app);
+  const octokit = makeOctokit();
+  const context = makeContext({
+    octokit,
+    config: dustyConfig(["copilot"]),
+    payload: {
+      pull_request: { number: 3 },
+      requested_team: { slug: "dusty", name: "Dusty" },
+      sender: { login: "david" },
+    },
+  });
+  await dispatch("pull_request.review_requested", context);
+  await new Promise((resolve) => setTimeout(resolve, 1));
+
+  assert.equal(countCalls(octokit, "pulls.removeRequestedReviewers"), 1);
+  assert.equal(countCalls(octokit, "rest.actions.createWorkflowDispatch"), 0);
+
+  const comments = calls(octokit, "rest.issues.createComment");
+  assert.equal(comments.length, 1);
+  assert.match(comments[0].args.body, /\*\*Dusty\*\* is not currently available/);
+});
+
+// ---------------------------------------------------------------------------
+// pull_request_review.submitted (clearing a provider's team request)
+// ---------------------------------------------------------------------------
+
+test("review submitted: Dusty's review clears the dusty team request", async () => {
+  const { app, dispatch } = makeApp();
+  register(app);
+  const octokit = makeOctokit();
+  const context = makeContext({
+    octokit,
+    config: dustyConfig(),
+    payload: {
+      pull_request: {
+        number: 3,
+        requested_teams: [{ slug: "dusty", name: "Dusty" }, { slug: "backend", name: "Backend" }],
+      },
+      review: { user: { login: "dusty-the-robot[bot]", type: "Bot" } },
+    },
+  });
+  await dispatch("pull_request_review.submitted", context);
+
+  const removals = calls(octokit, "pulls.removeRequestedReviewers");
+  assert.equal(removals.length, 1);
+  assert.deepEqual(removals[0].args.team_reviewers, ["dusty"]);
+});
+
+test("review submitted: a human review clears nothing", async () => {
+  const { app, dispatch } = makeApp();
+  register(app);
+  const octokit = makeOctokit();
+  const context = makeContext({
+    octokit,
+    config: dustyConfig(),
+    payload: {
+      pull_request: { number: 3, requested_teams: [{ slug: "dusty", name: "Dusty" }] },
+      review: { user: { login: "david", type: "User" } },
+    },
+  });
+  await dispatch("pull_request_review.submitted", context);
   assert.equal(octokit.calls.length, 0);
 });
 
