@@ -213,6 +213,15 @@ test("hasPendingSummon: an unanswered Dusty summon reads as pending", () => {
   );
   // Another provider's summon is not Dusty's.
   assert.equal(hasPendingSummon(BOT.Augment, { issueComments }), false);
+  // Nor does a human whose login happens to carry the provider key answer it.
+  assert.ok(
+    hasPendingSummon(BOT.Dusty, {
+      issueComments: [
+        ...issueComments,
+        { user: { login: "dusty-rhodes", type: "User" }, body: "nice", created_at: "2026-07-01T00:05:00Z" },
+      ],
+    })
+  );
 });
 
 test("hasPendingSummon: nothing pending on a quiet PR", () => {

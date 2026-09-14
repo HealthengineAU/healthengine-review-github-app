@@ -393,7 +393,7 @@ test("review submitted: Dusty's review clears the dusty team request", async () 
   assert.deepEqual(removals[0].args.team_reviewers, ["dusty"]);
 });
 
-test("review submitted: a human review clears nothing", async () => {
+test("review submitted: a human whose login contains a provider key clears nothing", async () => {
   const { app, dispatch } = makeApp();
   register(app);
   const octokit = makeOctokit();
@@ -402,7 +402,7 @@ test("review submitted: a human review clears nothing", async () => {
     config: dustyConfig(),
     payload: {
       pull_request: { number: 3, requested_teams: [{ slug: "dusty", name: "Dusty" }] },
-      review: { user: { login: "david", type: "User" } },
+      review: { user: { login: "dusty-rhodes", type: "User" } },
     },
   });
   await dispatch("pull_request_review.submitted", context);
