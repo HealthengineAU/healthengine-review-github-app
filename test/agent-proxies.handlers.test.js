@@ -148,6 +148,82 @@ test("bot comments are ignored", async (t) => {
 });
 
 // ---------------------------------------------------------------------------
+// pull_request_review_comment.created
+// ---------------------------------------------------------------------------
+
+function reviewCommentPayload({ prAuthor = "someone-else", author = "david", type = "User", body, number = 30 } = {}) {
+  return {
+    repository: { name: "svc" },
+    pull_request: { number, user: { login: prAuthor } },
+    comment: { id: 909, user: { login: author, type }, body },
+  };
+}
+
+test("@mention in an inline review comment dispatches a mention event", async (t) => {
+  const octokit = makeOctokit();
+  await fire(t, {
+    event: "pull_request_review_comment.created",
+    octokit,
+    payload: reviewCommentPayload({ body: "@dusty remember what Jim said" }),
+  });
+  const calls = dispatches(octokit);
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].args.inputs.event, "mention");
+  assert.equal(calls[0].args.inputs.pr, "30");
+  assert.equal(calls[0].args.inputs.actor, "david");
+  assert.equal(calls[0].args.inputs.body, "@dusty remember what Jim said");
+});
+
+test("an unmentioned inline review comment on a Dusty PR wakes nothing", async (t) => {
+  const octokit = makeOctokit();
+  await fire(t, {
+    event: "pull_request_review_comment.created",
+    octokit,
+    payload: reviewCommentPayload({ prAuthor: "dusty-the-robot[bot]", body: "agreed, nice catch" }),
+  });
+  assert.equal(dispatches(octokit).length, 0);
+});
+
+test("an inline review comment from a bot is ignored", async (t) => {
+  const octokit = makeOctokit();
+  await fire(t, {
+    event: "pull_request_review_comment.created",
+    octokit,
+    payload: reviewCommentPayload({ author: "copilot[bot]", type: "Bot", body: "cc @dusty" }),
+  });
+  assert.equal(dispatches(octokit).length, 0);
+});
+
+test("an inline review comment from an ignored user is dropped", async (t) => {
+  const octokit = makeOctokit();
+  await fire(t, {
+    event: "pull_request_review_comment.created",
+    octokit,
+    payload: reviewCommentPayload({ author: "healthengine-sre", body: "cc @dusty" }),
+  });
+  assert.equal(dispatches(octokit).length, 0);
+});
+
+test("an inline review comment is acked on the review-comment endpoint", async (t) => {
+  const octokit = makeOctokit({
+    "rest.reactions.createForPullRequestReviewComment": { data: { id: SEEN_ID } },
+  });
+  await fire(t, {
+    event: "pull_request_review_comment.created",
+    octokit,
+    payload: reviewCommentPayload({ body: "@dusty take a look" }),
+  });
+  const seen = octokit.calls.filter((c) => c.method === "rest.reactions.createForPullRequestReviewComment");
+  assert.equal(seen.length, 2); // 👀 then 👍
+  assert.deepEqual(seen.map((c) => c.args.content), ["eyes", "+1"]);
+  assert.equal(seen[0].args.comment_id, 909);
+  const cleared = octokit.calls.filter((c) => c.method === "rest.reactions.deleteForPullRequestComment");
+  assert.equal(cleared.length, 1);
+  assert.equal(cleared[0].args.reaction_id, SEEN_ID);
+  assert.equal(reactions(octokit).length, 0); // never the issue-comment endpoint
+});
+
+// ---------------------------------------------------------------------------
 // status
 // ---------------------------------------------------------------------------
 

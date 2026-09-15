@@ -83,6 +83,8 @@ export function makeOctokit(responses = {}) {
         createForIssueComment: record("rest.reactions.createForIssueComment"),
         deleteForIssueComment: record("rest.reactions.deleteForIssueComment"),
         listForIssueComment: tag("rest.reactions.listForIssueComment"),
+        createForPullRequestReviewComment: record("rest.reactions.createForPullRequestReviewComment"),
+        deleteForPullRequestComment: record("rest.reactions.deleteForPullRequestComment"),
       },
     },
     // Some handlers call context.octokit.pulls.* (not rest.pulls.*).
