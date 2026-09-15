@@ -155,7 +155,7 @@ test("issue_comment: standalone 'ai review' picks the only enabled provider", as
   const { app, dispatch } = makeApp();
   register(app);
   // Only copilot enabled → triggerRandomReviewer deterministically picks it.
-  const octokit = makeOctokit();
+  const octokit = makeOctokit({ "rest.pulls.get": { data: { additions: 40, deletions: 2 } } });
   const context = makeContext({
     octokit,
     config: fakeConfig(["copilot"]),
@@ -168,6 +168,60 @@ test("issue_comment: standalone 'ai review' picks the only enabled provider", as
 
   assert.equal(countCalls(octokit, "rest.reactions.createForIssueComment"), 1);
   assert.equal(countCalls(octokit, "rest.pulls.requestReviewers"), 1);
+});
+
+test("issue_comment: 'ai review' honours the provider group band for the PR's size", async () => {
+  const { app, dispatch } = makeApp();
+  register(app);
+  // Both enabled, but only copilot is in the band for a 300-line PR.
+  const octokit = makeOctokit({ "rest.pulls.get": { data: { additions: 300, deletions: 10 } } });
+  const context = makeContext({
+    octokit,
+    config: {
+      ...dustyConfig(["copilot", "dusty"]),
+      ai_review: {
+        provider_groups: [
+          { min_lines_added: 120, max_lines_added: 1500, providers: ["copilot"] },
+          { providers: ["dusty"] },
+        ],
+      },
+    },
+    payload: {
+      issue: { number: 7, pull_request: {} },
+      comment: { id: 5, body: "ai review", user: { type: "User" } },
+    },
+  });
+  await dispatch("issue_comment.created", context);
+  await new Promise((resolve) => setTimeout(resolve, 1));
+
+  assert.equal(countCalls(octokit, "rest.pulls.requestReviewers"), 1);
+  assert.equal(countCalls(octokit, "rest.actions.createWorkflowDispatch"), 0);
+});
+
+test("issue_comment: 'ai review' stays silent when the PR's size is unknown", async () => {
+  for (const response of [
+    () => {
+      throw new Error("boom");
+    },
+    { data: {} },
+  ]) {
+    const { app, dispatch } = makeApp();
+    register(app);
+    const octokit = makeOctokit({ "rest.pulls.get": response });
+    const context = makeContext({
+      octokit,
+      config: fakeConfig(["copilot"]),
+      payload: {
+        issue: { number: 7, pull_request: {} },
+        comment: { id: 5, body: "ai review", user: { type: "User" } },
+      },
+    });
+    await dispatch("issue_comment.created", context);
+
+    assert.equal(countCalls(octokit, "rest.reactions.createForIssueComment"), 0);
+    assert.equal(countCalls(octokit, "rest.pulls.requestReviewers"), 0);
+    assert.equal(countCalls(octokit, "rest.issues.createComment"), 0);
+  }
 });
 
 test("issue_comment: Auggie summon survives failing comment edits", async (t) => {
