@@ -170,6 +170,55 @@ test("cleanCopilotBody: single line containing <br> is treated as multi-line", (
   assert.ok(cleaned.includes("<details>"));
 });
 
+const COPILOT_REVIEW_BODY = [
+  "### 🟡 Changes recommended",
+  "",
+  "The updater test can race and pass without exercising the closed-stream path.",
+  "",
+  "*Get a fresh assessment by requesting another Copilot review.*",
+  "",
+  "<details>",
+  "<summary>Pull request overview</summary>",
+  "",
+  "Fixes Slack delivery failures involving expired streams.",
+  "</details>",
+  "",
+  "---",
+  "",
+  '💡 <a href="/HealthengineAU/dusty/new/main?filename=.github/skills/code-review/SKILL.md" class="Link--inTextBlock" target="_blank" rel="noopener noreferrer">Add a `code-review` agent skill</a> or configure MCP servers for context-aware, tailored reviews. <a href="https://docs.github.com/copilot/how-tos/use-copilot-agents/request-a-code-review/use-code-review?tool=webui#mcp-servers-and-agent-skills" class="Link--inTextBlock" target="_blank" rel="noopener noreferrer">Learn more in the docs.</a>',
+].join("\n");
+
+test("cleanCopilotBody: strips the fresh-assessment line and the agent-skill footer", () => {
+  const cleaned = cleanCopilotBody(COPILOT_REVIEW_BODY);
+  assert.ok(!cleaned.includes("Get a fresh assessment"));
+  assert.ok(!cleaned.includes("agent skill"));
+  assert.ok(!cleaned.includes("Learn more in the docs"));
+  assert.ok(!cleaned.trimEnd().endsWith("---"));
+});
+
+test("cleanCopilotBody: keeps the rest of the new-format review intact", () => {
+  const cleaned = cleanCopilotBody(COPILOT_REVIEW_BODY);
+  assert.ok(cleaned.startsWith("### 🟡 Changes recommended"));
+  assert.ok(cleaned.includes("exercising the closed-stream path"));
+  assert.ok(cleaned.includes("<summary>Pull request overview</summary>"));
+  assert.ok(cleaned.trimEnd().endsWith("</details>"));
+  assert.ok(!/\n{3,}/.test(cleaned));
+});
+
+test("cleanCopilotBody: strips the footer even without a preceding rule", () => {
+  const body = "Summary.\n\n💡 Add a `code-review` agent skill for tailored reviews.";
+  assert.equal(cleanCopilotBody(body), "Summary.");
+});
+
+test("cleanCopilotBody: still collapses the legacy overview heading after stripping", () => {
+  const body =
+    "Preamble.\n\n*Get a fresh assessment by requesting another Copilot review.*\n\n## Pull request overview\nLine one.\nLine two.";
+  const cleaned = cleanCopilotBody(body);
+  assert.ok(!cleaned.includes("Get a fresh assessment"));
+  assert.ok(cleaned.includes("Copilot PR Summary"));
+  assert.ok(cleaned.includes("Line one."));
+});
+
 // ---------------------------------------------------------------------------
 // isCopilotAuthored
 // ---------------------------------------------------------------------------

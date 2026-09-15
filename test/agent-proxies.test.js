@@ -5,6 +5,8 @@ import { normalizeAgents } from "../lib/config.js";
 import {
   classifyReview,
   classifyComment,
+  classifyReviewComment,
+  needsThreadStarter,
   classifyStatus,
   classifyOwnIssueComment,
 } from "../lib/agent-proxies.js";
@@ -162,6 +164,58 @@ test("classifyComment: bots, ignore_users, the agent itself, and unmentioned for
   assert.equal(classifyComment(a, { prAuthor: "dusty-the-robot[bot]", commentAuthor: "healthengine-sre", isBot: false, body: "auto" }), null);
   assert.equal(classifyComment(a, { prAuthor: "dusty-the-robot[bot]", commentAuthor: "dusty-the-robot[bot]", isBot: true, body: "self" }), null);
   assert.equal(classifyComment(a, { prAuthor: "someone-else", commentAuthor: "david", isBot: false, body: "no mention here" }), null);
+});
+
+// ---------------------------------------------------------------------------
+// classifyReviewComment / needsThreadStarter
+// ---------------------------------------------------------------------------
+
+test("classifyReviewComment: an @mention is a mention wherever the thread started", () => {
+  const a = agent();
+  assert.equal(classifyReviewComment(a, { commentAuthor: "david", isBot: false, body: "cc @dusty" }), "mention");
+  assert.equal(
+    classifyReviewComment(a, { commentAuthor: "david", isBot: false, body: "cc @dusty", threadStarter: "jim" }),
+    "mention",
+  );
+});
+
+test("classifyReviewComment: an unmentioned reply on the agent's own thread is feedback", () => {
+  assert.equal(
+    classifyReviewComment(agent(), { commentAuthor: "jim", isBot: false, body: "surprised this is an issue", threadStarter: "dusty-the-robot[bot]" }),
+    "comment",
+  );
+});
+
+test("classifyReviewComment: bots, ignore_users, the agent itself, and other people's threads are ignored", () => {
+  const a = agent();
+  assert.equal(classifyReviewComment(a, { commentAuthor: "copilot[bot]", isBot: true, body: "@dusty", threadStarter: "dusty-the-robot[bot]" }), null);
+  assert.equal(classifyReviewComment(a, { commentAuthor: "healthengine-sre", isBot: false, body: "@dusty", threadStarter: "dusty-the-robot[bot]" }), null);
+  assert.equal(classifyReviewComment(a, { commentAuthor: "dusty-the-robot[bot]", isBot: false, body: "more", threadStarter: "dusty-the-robot[bot]" }), null);
+  assert.equal(classifyReviewComment(a, { commentAuthor: "david", isBot: false, body: "agreed", threadStarter: "jim" }), null);
+});
+
+test("classifyReviewComment: each branch needs its own event enabled", () => {
+  const noMention = normalizeAgents([{ ...RAW, events: ["comment"] }])[0];
+  assert.equal(classifyReviewComment(noMention, { commentAuthor: "david", isBot: false, body: "cc @dusty" }), null);
+  assert.equal(
+    classifyReviewComment(noMention, { commentAuthor: "david", isBot: false, body: "agreed", threadStarter: "dusty-the-robot[bot]" }),
+    "comment",
+  );
+  const noComment = normalizeAgents([{ ...RAW, events: ["mention"] }])[0];
+  assert.equal(
+    classifyReviewComment(noComment, { commentAuthor: "david", isBot: false, body: "agreed", threadStarter: "dusty-the-robot[bot]" }),
+    null,
+  );
+});
+
+test("needsThreadStarter: only for a reply that nothing else already settled", () => {
+  const a = agent();
+  assert.equal(needsThreadStarter(a, { commentAuthor: "david", isBot: false, body: "agreed", inReplyToId: 1 }), true);
+  assert.equal(needsThreadStarter(a, { commentAuthor: "david", isBot: false, body: "agreed" }), false);
+  assert.equal(needsThreadStarter(a, { commentAuthor: "david", isBot: false, body: "cc @dusty", inReplyToId: 1 }), false);
+  assert.equal(needsThreadStarter(a, { commentAuthor: "copilot[bot]", isBot: true, body: "agreed", inReplyToId: 1 }), false);
+  const noComment = normalizeAgents([{ ...RAW, events: ["mention"] }])[0];
+  assert.equal(needsThreadStarter(noComment, { commentAuthor: "david", isBot: false, body: "agreed", inReplyToId: 1 }), false);
 });
 
 // ---------------------------------------------------------------------------

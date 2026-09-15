@@ -151,12 +151,17 @@ test("bot comments are ignored", async (t) => {
 // pull_request_review_comment.created
 // ---------------------------------------------------------------------------
 
-function reviewCommentPayload({ prAuthor = "someone-else", author = "david", type = "User", body, number = 30 } = {}) {
+function reviewCommentPayload({ prAuthor = "someone-else", author = "david", type = "User", body, number = 30, inReplyTo } = {}) {
   return {
     repository: { name: "svc" },
     pull_request: { number, user: { login: prAuthor } },
-    comment: { id: 909, user: { login: author, type }, body },
+    comment: { id: 909, user: { login: author, type }, body, in_reply_to_id: inReplyTo },
   };
+}
+
+// The thread's opening comment, as rest.pulls.getReviewComment returns it.
+function startedBy(login) {
+  return { "rest.pulls.getReviewComment": { data: { user: { login } } } };
 }
 
 test("@mention in an inline review comment dispatches a mention event", async (t) => {
@@ -221,6 +226,80 @@ test("an inline review comment is acked on the review-comment endpoint", async (
   assert.equal(cleared.length, 1);
   assert.equal(cleared[0].args.reaction_id, SEEN_ID);
   assert.equal(reactions(octokit).length, 0); // never the issue-comment endpoint
+});
+
+test("a reply on a thread Dusty opened dispatches a comment event", async (t) => {
+  const octokit = makeOctokit(startedBy("dusty-the-robot[bot]"));
+  await fire(t, {
+    event: "pull_request_review_comment.created",
+    octokit,
+    payload: reviewCommentPayload({ body: "surprised this is an issue at all", inReplyTo: 4012708466 }),
+  });
+  const calls = dispatches(octokit);
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].args.inputs.event, "comment");
+  assert.equal(calls[0].args.inputs.actor, "david");
+  const lookups = octokit.calls.filter((c) => c.method === "rest.pulls.getReviewComment");
+  assert.equal(lookups.length, 1);
+  assert.equal(lookups[0].args.comment_id, 4012708466);
+});
+
+test("a reply on someone else's thread wakes nothing", async (t) => {
+  const octokit = makeOctokit(startedBy("jim"));
+  await fire(t, {
+    event: "pull_request_review_comment.created",
+    octokit,
+    payload: reviewCommentPayload({ prAuthor: "dusty-the-robot[bot]", body: "agreed", inReplyTo: 555 }),
+  });
+  assert.equal(dispatches(octokit).length, 0);
+});
+
+test("a new top-level review comment costs no thread lookup", async (t) => {
+  const octokit = makeOctokit();
+  await fire(t, {
+    event: "pull_request_review_comment.created",
+    octokit,
+    payload: reviewCommentPayload({ body: "this line looks wrong" }),
+  });
+  assert.equal(dispatches(octokit).length, 0);
+  assert.equal(octokit.calls.filter((c) => c.method === "rest.pulls.getReviewComment").length, 0);
+});
+
+test("a mention on Dusty's own thread stays a mention and skips the lookup", async (t) => {
+  const octokit = makeOctokit(startedBy("dusty-the-robot[bot]"));
+  await fire(t, {
+    event: "pull_request_review_comment.created",
+    octokit,
+    payload: reviewCommentPayload({ body: "@dusty remember this", inReplyTo: 4012708466 }),
+  });
+  const calls = dispatches(octokit);
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].args.inputs.event, "mention");
+  assert.equal(octokit.calls.filter((c) => c.method === "rest.pulls.getReviewComment").length, 0);
+});
+
+test("Dusty's own reply on its own thread wakes nothing", async (t) => {
+  const octokit = makeOctokit(startedBy("dusty-the-robot[bot]"));
+  await fire(t, {
+    event: "pull_request_review_comment.created",
+    octokit,
+    payload: reviewCommentPayload({ author: "dusty-the-robot[bot]", body: "and another thing", inReplyTo: 4012708466 }),
+  });
+  assert.equal(dispatches(octokit).length, 0);
+});
+
+test("an unreadable thread root wakes nothing", async (t) => {
+  const octokit = makeOctokit({
+    "rest.pulls.getReviewComment": () => {
+      throw Object.assign(new Error("Not Found"), { status: 404 });
+    },
+  });
+  await fire(t, {
+    event: "pull_request_review_comment.created",
+    octokit,
+    payload: reviewCommentPayload({ body: "agreed", inReplyTo: 555 }),
+  });
+  assert.equal(dispatches(octokit).length, 0);
 });
 
 // ---------------------------------------------------------------------------
