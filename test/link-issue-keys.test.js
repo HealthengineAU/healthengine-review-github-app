@@ -11,7 +11,7 @@ import { normalizeIssueLinkRules } from "../lib/config.js";
 
 const RULES = normalizeIssueLinkRules([
   { keys: ["ABC", "XY", "TEAM", "PROJ"], url: "https://example.atlassian.net/browse/$KEY-$NUMBER" },
-  { keys: ["SESSION"], label: "session #$NUMBER", url: "https://github.com/example-org/example-repo/issues/$NUMBER" },
+  { keys: ["THING-SESSION"], label: "session #$NUMBER", url: "https://github.com/example-org/example-repo/issues/$NUMBER" },
 ]);
 
 const jira = (key, number) => ({
@@ -57,14 +57,32 @@ test("extractReferences: ignores version numbers and word fragments", () => {
   assert.deepEqual(extractReferences("xabc-1", RULES), []);
 });
 
-test("extractReferences: the first matching rule routes the reference", () => {
-  assert.deepEqual(extractReferences("claude/some-session-220-storybook-port", RULES), [
+test("extractReferences: a key can span hyphens, so near-identical keys don't collide", () => {
+  assert.deepEqual(extractReferences("claude/thing-session-220-storybook-port", RULES), [
     {
-      token: "SESSION-220",
+      token: "THING-SESSION-220",
       label: "session #220",
       url: "https://github.com/example-org/example-repo/issues/220",
     },
   ]);
+  // Same trailing segment, different owner — no rule claims it.
+  assert.deepEqual(extractReferences("claude/else-session-220-storybook-port", RULES), []);
+  assert.deepEqual(extractReferences("session-220", RULES), []);
+});
+
+test("extractReferences: the longest key a rule claims wins", () => {
+  const rules = normalizeIssueLinkRules([
+    { keys: ["SESSION"], url: "https://example.test/short/$NUMBER" },
+    { keys: ["THING-SESSION"], url: "https://example.test/long/$NUMBER" },
+  ]);
+  assert.equal(extractReferences("thing-session-220", rules)[0].url, "https://example.test/long/220");
+  assert.equal(extractReferences("other-session-220", rules)[0].url, "https://example.test/short/220");
+});
+
+test("extractReferences: a key followed by a sentence still counts", () => {
+  assert.deepEqual(extractReferences("ABC-123. Fix validation", RULES), [jira("ABC", 123)]);
+  assert.deepEqual(extractReferences("ABC-123: fix validation", RULES), [jira("ABC", 123)]);
+  assert.deepEqual(extractReferences("(ABC-123) fix validation", RULES), [jira("ABC", 123)]);
 });
 
 test("extractReferences: $key substitutes the lower-cased key", () => {
@@ -175,6 +193,18 @@ test("withIssueLinks: prepends the link above the existing description", () => {
       references: [jira("ABC", 5752)],
     }),
     "[ABC-5752](https://example.atlassian.net/browse/ABC-5752)\n\nMalformed bearer tokens (empty strings, ...",
+  );
+});
+
+test("withIssueLinks: leading indentation in the description is preserved", () => {
+  assert.equal(
+    withIssueLinks({ body: "    indented code block\n", references: [jira("ABC", 5752)] }),
+    "[ABC-5752](https://example.atlassian.net/browse/ABC-5752)\n\n    indented code block\n",
+  );
+  // Leading blank lines would otherwise stack up under the link.
+  assert.equal(
+    withIssueLinks({ body: "\n\nSummary.", references: [jira("ABC", 5752)] }),
+    "[ABC-5752](https://example.atlassian.net/browse/ABC-5752)\n\nSummary.",
   );
 });
 

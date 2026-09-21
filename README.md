@@ -50,8 +50,8 @@
   - On `pull_request.opened`, when the branch name or title names an issue
     (`ABC-123`) and the description neither mentions nor links it
   - `issue_links.rules` says which keys count and where each points, so
-    `cs-123` and `session-220` can reach different trackers — a key no rule
-    claims (`node-21`, `hono-4-13-8`) is never linked
+    `cs-123` and `thing-session-220` can reach different trackers — a key no
+    rule claims (`node-21`, `hono-4-13-8`) is never linked
   - Descriptions that already name the issue are left alone, so a tracker that
     auto-links keys itself isn't doubled up on
 - Forwards activity to autonomous agent proxies (opt-in via `agents`):
@@ -149,8 +149,10 @@ issue_links:
   rules:
     - keys: [ABC, XY]   # abc-123, claude/XY-45-something, someone/abc-123-wip
       url: https://example.atlassian.net/browse/$KEY-$NUMBER
-    - keys: [SESSION]   # some-session-220-storybook-port
-      label: "session #$NUMBER"            # optional, defaults to $KEY-$NUMBER
+    - keys: [THING-SESSION]                # keys may span hyphens, and the
+      label: "session #$NUMBER"            # longest one a rule claims wins —
+                                           # thing-session-220 is not the same
+                                           # key as other-session-220.
                                            # (quote values containing "#")
       url: https://github.com/example-org/example-repo/issues/$NUMBER
 

@@ -10,7 +10,7 @@ const CONFIG = {
     rules: [
       { keys: ["ABC", "XY"], url: "https://example.atlassian.net/browse/$KEY-$NUMBER" },
       {
-        keys: ["SESSION"],
+        keys: ["THING-SESSION"],
         label: "session #$NUMBER",
         url: "https://github.com/example-org/example-repo/issues/$NUMBER",
       },
@@ -29,10 +29,14 @@ function makePr({
   };
 }
 
-async function open(payload, { config = CONFIG, repo } = {}) {
+// `current` is the description the re-read returns, i.e. what the PR looks
+// like by the time we write — the same as the payload's unless a test says so.
+async function open(payload, { config = CONFIG, repo, current } = {}) {
   const { app, dispatch } = makeApp();
   register(app);
-  const octokit = makeOctokit();
+  const octokit = makeOctokit({
+    "rest.pulls.get": { data: { body: current === undefined ? payload.pull_request.body : current } },
+  });
   await dispatch("pull_request.opened", makeContext({ octokit, payload, config, repo }));
   return octokit.calls.filter((c) => c.method === "rest.pulls.update");
 }
@@ -62,8 +66,13 @@ test("pull_request.opened: a key no rule claims is untouched", async () => {
   assert.equal(updates.length, 0);
 });
 
+test("pull_request.opened: another agent's sessions are a different key", async () => {
+  const updates = await open(makePr({ branch: "claude/else-session-220-storybook-port", title: "Storybook port" }));
+  assert.equal(updates.length, 0);
+});
+
 test("pull_request.opened: rules route each key to its own tracker", async () => {
-  const updates = await open(makePr({ branch: "claude/some-session-220-storybook-port", title: "Storybook port" }));
+  const updates = await open(makePr({ branch: "claude/thing-session-220-storybook-port", title: "Storybook port" }));
   assert.equal(updates.length, 1);
   assert.ok(
     updates[0].args.body.startsWith(
@@ -115,5 +124,19 @@ test("pull_request.opened: a repository the filter excludes is untouched", async
       },
     },
   });
+  assert.equal(updates.length, 0);
+});
+
+test("pull_request.opened: a description edited since delivery isn't clobbered", async () => {
+  const updates = await open(makePr(), { current: "Rewritten while the webhook was in flight." });
+  assert.equal(updates.length, 1);
+  assert.equal(
+    updates[0].args.body,
+    "[ABC-5752](https://example.atlassian.net/browse/ABC-5752)\n\nRewritten while the webhook was in flight.",
+  );
+});
+
+test("pull_request.opened: an edit that added the key means nothing to do", async () => {
+  const updates = await open(makePr(), { current: "Fixes ABC-5752." });
   assert.equal(updates.length, 0);
 });
