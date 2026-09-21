@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import crypto from "node:crypto";
 
-import { verifySlackSignature, classifyMention, ackReceived } from "../lib/dusty-slack-proxy.js";
+import { verifySlackSignature, classifyMention, parseAllowedBots, ackReceived } from "../lib/dusty-slack-proxy.js";
 
 const SECRET = "shhh";
 const sign = (rawBody, ts, secret = SECRET) =>
@@ -49,9 +49,29 @@ test("classifyMention uses ts as the thread key when not already in a thread", (
   assert.equal(out.slack_thread, "222.2");
 });
 
-test("classifyMention ignores our own / other bot messages", () => {
+test("classifyMention ignores our own / unlisted bots' messages", () => {
   assert.equal(classifyMention({ type: "app_mention", channel: "C1", ts: "1.1", user: "U9", bot_id: "B01", text: "x" }, {}), null);
   assert.equal(classifyMention({ type: "app_mention", channel: "C1", ts: "1.1", user: "U9", app_id: "A01", text: "x" }, {}), null);
+  const allowedBots = parseAllowedBots("A02,B02");
+  assert.equal(classifyMention({ type: "app_mention", channel: "C1", ts: "1.1", bot_id: "B01", app_id: "A01", text: "<@B01> hi <@U9>" }, { allowedBots, selfUserId: "B01" }), null);
+});
+
+test("classifyMention wakes on an allow-listed app, by either app_id or bot_id", () => {
+  const event = { type: "app_mention", channel: "C1", ts: "1.1", bot_id: "B02", app_id: "A02", text: "<@B01|Dusty> write it up. Requested by <@U9|Ann>." };
+  const opts = { teamId: "T1", allowedTeam: "T1", selfUserId: "B01" };
+  for (const list of ["A02", "B02"]) {
+    const out = classifyMention(event, { ...opts, allowedBots: parseAllowedBots(list) });
+    assert.equal(out.actor, "U9");
+    assert.equal(out.body, "write it up. Requested by .");
+  }
+});
+
+test("classifyMention ignores an allow-listed app that tags nobody to report back to", () => {
+  const allowedBots = parseAllowedBots("A02");
+  const base = { type: "app_mention", channel: "C1", ts: "1.1", bot_id: "B02", app_id: "A02" };
+  assert.equal(classifyMention({ ...base, text: "<@B01|Dusty> write it up." }, { allowedBots, selfUserId: "B01" }), null);
+  // Without our own id, the only mention present is indistinguishable from Dusty's.
+  assert.equal(classifyMention({ ...base, text: "<@B01|Dusty> write it up. <@U9>" }, { allowedBots }), null);
 });
 
 test("classifyMention ignores a foreign workspace", () => {
@@ -61,6 +81,11 @@ test("classifyMention ignores a foreign workspace", () => {
 test("classifyMention ignores non-app_mention events", () => {
   assert.equal(classifyMention({ type: "message", channel: "C1", ts: "1.1", user: "U9" }, {}), null);
   assert.equal(classifyMention(null, {}), null);
+});
+
+test("parseAllowedBots splits, trims and drops blanks", () => {
+  assert.deepEqual([...parseAllowedBots(" A01 , B01 ,, ")], ["A01", "B01"]);
+  assert.equal(parseAllowedBots(undefined).size, 0);
 });
 
 // --- ackReceived -------------------------------------------------------------
