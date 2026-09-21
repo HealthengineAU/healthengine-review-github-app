@@ -46,6 +46,14 @@
 - Cleans up AI reviewer comments:
   - Removing links to unsupported features
   - Collapses summaries
+- Links the issue a pull request is for into its description (opt-in via `issue_links`):
+  - On `pull_request.opened`, when the branch name or title names an issue
+    (`ABC-123`) and the description neither mentions nor links it
+  - `issue_links.rules` says which keys count and where each points, so
+    `cs-123` and `session-220` can reach different trackers — a key no rule
+    claims (`node-21`, `hono-4-13-8`) is never linked
+  - Descriptions that already name the issue are left alone, so a tracker that
+    auto-links keys itself isn't doubled up on
 - Forwards activity to autonomous agent proxies (opt-in via `agents`):
   - Wakes an agent when its own PRs receive a review, a comment, or a failed/errored status check, and when it's `@`-mentioned on any PR
   - Coalesces bursts (debounced) and pokes the agent via a `workflow_dispatch`
@@ -124,6 +132,27 @@ ai_review:
     min: 2                 # minimum number of human approvers
     exclude:               # bot authors exempt from the requirement
       - "dependabot[bot]"  # (exact logins, case-insensitive; [] for none)
+
+# Issue links (optional; omit the key entirely to disable).
+#
+# When a pull request is opened and its branch name or title names an issue the
+# description doesn't mention, the key is prepended to the description as a
+# link. Each rule claims a set of keys and says where they point; the first rule
+# whose `keys` match wins. `keys` and `repositories` take the same filter
+# patterns as ai_review above. Templates substitute $KEY (upper-cased), $key
+# (lower-cased) and $NUMBER.
+#
+# Requires the app to have Pull requests: Read and write.
+issue_links:
+  automatic: false      # set true to start editing descriptions
+  repositories: ["*"]   # e.g. ["*", "!legacy-monolith"]
+  rules:
+    - keys: [ABC, XY]   # abc-123, claude/XY-45-something, someone/abc-123-wip
+      url: https://example.atlassian.net/browse/$KEY-$NUMBER
+    - keys: [SESSION]   # some-session-220-storybook-port
+      label: "session #$NUMBER"            # optional, defaults to $KEY-$NUMBER
+                                           # (quote values containing "#")
+      url: https://github.com/example-org/example-repo/issues/$NUMBER
 
 # Agent proxies (optional; omit the key entirely to disable).
 #

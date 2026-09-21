@@ -77,6 +77,7 @@ export function makeOctokit(responses = {}) {
         listReviews: tag("rest.pulls.listReviews"),
         listReviewComments: tag("rest.pulls.listReviewComments"),
         requestReviewers: record("rest.pulls.requestReviewers"),
+        update: record("rest.pulls.update"),
         updateReview: record("rest.pulls.updateReview"),
         updateReviewComment: record("rest.pulls.updateReviewComment"),
       },
