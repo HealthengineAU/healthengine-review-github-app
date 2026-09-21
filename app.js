@@ -3,6 +3,7 @@ import { register as registerAIReviewCommitStatus } from "./lib/ai-review-commit
 import { register as registerAutoTriggerAiReview } from "./lib/auto-trigger-ai-review.js";
 import { register as registerCleanAiReviewComments } from "./lib/clean-ai-review-comments.js";
 import { register as registerDustySlackProxy } from "./lib/dusty-slack-proxy.js";
+import { register as registerLinkIssueKeys } from "./lib/link-issue-keys.js";
 import { register as registerTriggerAiReview } from "./lib/trigger-ai-review.js";
 
 // Probot calls this with (app, { getRouter, cwd }) — getRouter is only present
@@ -13,5 +14,6 @@ export default (app, options = {}) => {
   registerAutoTriggerAiReview(app);
   registerCleanAiReviewComments(app);
   registerDustySlackProxy(app, options);
+  registerLinkIssueKeys(app);
   registerTriggerAiReview(app);
 };

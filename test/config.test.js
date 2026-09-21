@@ -6,6 +6,8 @@ import {
   normalizeAiReview,
   normalizeBotPrHumanApprovers,
   normalizeProviderGroups,
+  normalizeIssueLinks,
+  normalizeIssueLinkRules,
   normalizeProviders,
   normalizeSkipAuthors,
   loadAiReviewConfig,
@@ -495,4 +497,45 @@ test("normalizeProviderGroups: omitted bounds default to 0 and Infinity", () => 
   assert.equal(group.maxDiffSize, Infinity);
   assert.equal(group.minLinesAdded, 0);
   assert.equal(group.maxLinesAdded, Infinity);
+});
+
+// ---------------------------------------------------------------------------
+// normalizeIssueLinks
+// ---------------------------------------------------------------------------
+
+test("normalizeIssueLinks: dormant by default", () => {
+  const links = normalizeIssueLinks(undefined);
+  assert.equal(links.automatic, false);
+  assert.deepEqual(links.rules, []);
+  assert.equal(matchesFilterPatterns(links.repositories, "any-repo"), true);
+});
+
+test("normalizeIssueLinkRules: keys take filter patterns, label defaults", () => {
+  const [rule] = normalizeIssueLinkRules([
+    { keys: ["ABC", "XY"], url: "https://example.test/browse/$KEY-$NUMBER" },
+  ]);
+  assert.equal(rule.label, "$KEY-$NUMBER");
+  assert.equal(rule.url, "https://example.test/browse/$KEY-$NUMBER");
+  assert.equal(matchesFilterPatterns(rule.keys, "abc"), true);
+  assert.equal(matchesFilterPatterns(rule.keys, "node"), false);
+});
+
+test("normalizeIssueLinkRules: rules without usable keys or url are dropped", () => {
+  assert.deepEqual(normalizeIssueLinkRules(undefined), []);
+  assert.deepEqual(normalizeIssueLinkRules("nope"), []);
+  assert.deepEqual(normalizeIssueLinkRules([{ keys: ["ABC"] }]), []);
+  assert.deepEqual(normalizeIssueLinkRules([{ url: "https://example.test/$NUMBER" }]), []);
+  assert.equal(normalizeIssueLinkRules([{ keys: [" "], url: " " }]).length, 0);
+});
+
+test("normalizeIssueLinks: repositories filter the rollout", () => {
+  const links = normalizeIssueLinks({
+    automatic: true,
+    repositories: ["*", "!legacy-monolith"],
+    rules: [{ keys: ["ABC"], url: "https://example.test/$KEY-$NUMBER" }],
+  });
+  assert.equal(links.automatic, true);
+  assert.equal(links.rules.length, 1);
+  assert.equal(matchesFilterPatterns(links.repositories, "some-repo"), true);
+  assert.equal(matchesFilterPatterns(links.repositories, "legacy-monolith"), false);
 });
