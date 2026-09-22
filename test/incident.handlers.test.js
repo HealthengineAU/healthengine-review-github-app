@@ -8,12 +8,12 @@ import { register } from "../lib/incident/index.js";
 const SECRET = "shhh";
 
 const ENV = {
+  INCIDENT_JIRA_CLOUD_ID: "test-cloud",
   INCIDENT_SLACK_SIGNING_SECRET: SECRET,
   INCIDENT_SLACK_BOT_TOKEN: "xoxb-test",
   INCIDENT_CHANNEL_ID: "C_INC",
   INCIDENT_DUSTY_USER_ID: "U_DUSTY",
   INCIDENT_JIRA_BASE_URL: "https://hejira.atlassian.net",
-  INCIDENT_JIRA_CLOUD_ID: "cloud-1",
   INCIDENT_JIRA_EMAIL: "svc@healthengine.com.au",
   INCIDENT_JIRA_API_TOKEN: "tok",
 };
@@ -120,7 +120,7 @@ test("register tolerates being called with no options at all", () => {
 
 // A half-configured deploy must not mount a command that will fail mid-incident.
 test("register refuses to mount when configuration is incomplete", () => {
-  for (const key of ["INCIDENT_CHANNEL_ID", "INCIDENT_DUSTY_USER_ID", "INCIDENT_JIRA_EMAIL", "INCIDENT_JIRA_API_TOKEN", "INCIDENT_JIRA_CLOUD_ID"]) {
+  for (const key of ["INCIDENT_CHANNEL_ID", "INCIDENT_DUSTY_USER_ID", "INCIDENT_JIRA_CLOUD_ID", "INCIDENT_JIRA_EMAIL", "INCIDENT_JIRA_API_TOKEN"]) {
     const restore = withEnv({ [key]: undefined });
     try {
       const h = makeHarness();
@@ -168,6 +168,27 @@ test("/incident acks immediately and opens the modal with the trigger_id", async
   }
 });
 
+test("INCIDENT_JIRA_CLOUD_ID sets the REST base", async () => {
+  const restore = withEnv({ INCIDENT_JIRA_CLOUD_ID: "other-cloud" });
+  const fetchStub = stubFetch();
+  try {
+    const h = makeHarness();
+    register(h.app, h.options);
+    const payload = {
+      type: "view_submission",
+      user: { id: "U9" },
+      view: { callback_id: "incident_create", state: { values: { summary: { value: { value: "Bookings failing" } } } } },
+    };
+    const raw = "payload=" + encodeURIComponent(JSON.stringify(payload));
+    await post({ routes: h.routes, path: "/slack/incident/interact", headers: signedHeaders(raw), raw });
+    const created = fetchStub.calls.find((c) => c.url.endsWith("/rest/api/3/issue"));
+    assert.equal(created.url, "https://api.atlassian.com/ex/jira/other-cloud/rest/api/3/issue");
+  } finally {
+    fetchStub.restore();
+    restore();
+  }
+});
+
 test("a malformed interaction payload is ignored rather than throwing", async () => {
   const restore = withEnv();
   const fetchStub = stubFetch();
@@ -203,7 +224,7 @@ test("submitting the modal creates an INCY Incident and posts the triage message
     assert.ok(created, "expected a Jira create");
     // Wiring, not just the client: a scoped token sent anywhere but the gateway
     // authenticates and then reports the project as missing.
-    assert.equal(created.url, "https://api.atlassian.com/ex/jira/cloud-1/rest/api/3/issue");
+    assert.equal(created.url, "https://api.atlassian.com/ex/jira/test-cloud/rest/api/3/issue");
     assert.equal(created.body.fields.project.key, "INCY");
     assert.equal(created.body.fields.issuetype.id, "10821");
     assert.equal(created.body.fields.summary, "Bookings failing");

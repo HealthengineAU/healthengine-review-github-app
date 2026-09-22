@@ -158,24 +158,6 @@ test("transitionTo names what was reachable when the status is not", async () =>
   await assert.rejects(() => transitionTo(jira, "INCY-1", "Impact mitigated"), /available: Resolved/);
 });
 
-// The bug this guards: a scoped token sent to the site URL authenticates but
-// carries no scopes, and Jira reports the project as missing.
-test("jiraClient talks to the gateway, not the site", async () => {
-  const seen = [];
-  const original = globalThis.fetch;
-  globalThis.fetch = async (url, init) => {
-    seen.push({ url: String(url), auth: init.headers.authorization });
-    return { ok: true, status: 200, json: async () => ({}), text: async () => "" };
-  };
-  try {
-    const jira = jiraClient({ cloudId: "cloud-1", email: "svc@example.com", token: "t" });
-    await jira("/rest/api/3/issue", { method: "POST", body: {} });
-    assert.equal(seen[0].url, "https://api.atlassian.com/ex/jira/cloud-1/rest/api/3/issue");
-    assert.ok(seen[0].auth.startsWith("Basic "));
-  } finally {
-    globalThis.fetch = original;
-  }
-});
 
 test("prefillSummary capitalises the first letter and leaves the rest alone", () => {
   assert.equal(prefillSummary("the booking form has exploded"), "The booking form has exploded");
@@ -228,4 +210,26 @@ test("prefillSummary unescapes before capitalising", () => {
     prefillSummary("<#C1|bookings> form has exploded"),
     "#bookings form has exploded",
   );
+});
+
+
+
+test("jiraClient sends Basic auth to the api.atlassian.com gateway", async () => {
+  const seen = [];
+  const original = globalThis.fetch;
+  globalThis.fetch = async (url, init) => {
+    seen.push({ url: String(url), auth: init.headers.authorization });
+    return { ok: true, status: 200, json: async () => ({}), text: async () => "" };
+  };
+  try {
+    const jira = jiraClient({ email: "a@b.c", token: "t", cloudId: "test-cloud" });
+    await jira("/rest/api/3/myself");
+    assert.equal(seen[0].url, "https://api.atlassian.com/ex/jira/test-cloud/rest/api/3/myself");
+    assert.equal(seen[0].auth, "Basic " + Buffer.from("a@b.c:t").toString("base64"));
+
+    // A missing cloud id put the string "undefined" in the path and 404'd; fail loudly instead.
+    assert.throws(() => jiraClient({ email: "a@b.c", token: "t" }), /cloudId is required/);
+  } finally {
+    globalThis.fetch = original;
+  }
 });
