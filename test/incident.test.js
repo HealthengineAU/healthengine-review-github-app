@@ -4,6 +4,8 @@ import assert from "node:assert/strict";
 import { classifyMention } from "../lib/dusty-slack-proxy.js";
 import {
   decodeRef,
+  unescapeSlackText,
+  prefillSummary,
   draftReportPrompt,
   encodeRef,
   incidentModal,
@@ -13,7 +15,6 @@ import {
   threadBlocks,
   triageText,
 } from "../lib/incident/blocks.js";
-import { alreadySeen } from "../lib/incident/handlers.js";
 import {
   browseUrl,
   jiraClient,
@@ -106,17 +107,6 @@ test("thanksBlocks drops the report button when no Notion url is configured", ()
   assert.ok(without.at(-1).elements.every((e) => typeof e.url === "string" && e.url));
 });
 
-test("alreadySeen dedupes within the window and forgets after it", () => {
-  const now = 1_700_000_000_000;
-  assert.equal(alreadySeen("INCY-99:resolved", now), false);
-  assert.equal(alreadySeen("INCY-99:resolved", now), true);
-  assert.equal(alreadySeen("INCY-99:resolved", now + 11 * 60 * 1000), false);
-});
-
-test("alreadySeen ignores a missing key", () => {
-  assert.equal(alreadySeen(undefined), false);
-});
-
 test("findAccountId matches the email case-insensitively", async () => {
   const jira = async () => [{ accountId: "5a6", emailAddress: "Ann@Healthengine.com.au" }];
   assert.equal(await findAccountId(jira, "ann@healthengine.com.au"), "5a6");
@@ -185,4 +175,57 @@ test("jiraClient talks to the gateway, not the site", async () => {
   } finally {
     globalThis.fetch = original;
   }
+});
+
+test("prefillSummary capitalises the first letter and leaves the rest alone", () => {
+  assert.equal(prefillSummary("the booking form has exploded"), "The booking form has exploded");
+  assert.equal(prefillSummary("  SES keys rotated, email stuck  "), "SES keys rotated, email stuck");
+});
+
+test("prefillSummary returns empty for nothing typed", () => {
+  assert.equal(prefillSummary(""), "");
+  assert.equal(prefillSummary(undefined), "");
+});
+
+// Slack refuses to open a view whose initial_value is longer than max_length.
+test("prefillSummary truncates to the field's own limit", () => {
+  const long = "x".repeat(200);
+  const modal = incidentModal({ text: long });
+  const input = modal.blocks[0].element;
+  assert.equal(input.initial_value.length, input.max_length);
+});
+
+test("incidentModal leaves initial_value off when nothing was typed", () => {
+  assert.equal(incidentModal({}).blocks[0].element.initial_value, undefined);
+  assert.equal(incidentModal({ text: "boom" }).blocks[0].element.initial_value, "Boom");
+});
+
+test("unescapeSlackText unwraps channels, users and group mentions", () => {
+  assert.equal(
+    unescapeSlackText("<#C1|bookings> is down, ask <@U1|ann> or <!subteam^S1|@platform>"),
+    "#bookings is down, ask @ann or @platform",
+  );
+  assert.equal(unescapeSlackText("<!here> bookings are failing"), "@here bookings are failing");
+});
+
+test("unescapeSlackText prefers a link's label, else the url", () => {
+  assert.equal(unescapeSlackText("see <https://x.test/run|the build>"), "see the build");
+  assert.equal(unescapeSlackText("see <https://x.test/run>"), "see https://x.test/run");
+});
+
+test("unescapeSlackText keeps the reference when Slack sends no label", () => {
+  assert.equal(unescapeSlackText("<#C1> broke"), "#C1 broke");
+});
+
+// Entities are decoded after the markup, or &lt; would be parsed as markup.
+test("unescapeSlackText decodes entities without re-parsing them", () => {
+  assert.equal(unescapeSlackText("bookings &amp; payments"), "bookings & payments");
+  assert.equal(unescapeSlackText("&lt;script&gt; in the summary"), "<script> in the summary");
+});
+
+test("prefillSummary unescapes before capitalising", () => {
+  assert.equal(
+    prefillSummary("<#C1|bookings> form has exploded"),
+    "#bookings form has exploded",
+  );
 });

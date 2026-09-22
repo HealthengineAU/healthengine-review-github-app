@@ -72,17 +72,23 @@ function signedHeaders(raw, secret = SECRET) {
 
 // Records every Slack/Jira call the handler makes, so tests assert on effects
 // rather than on internals.
-function stubFetch() {
+function stubFetch({ transitions } = {}) {
   const calls = [];
   const original = globalThis.fetch;
+  const state = { transitions: transitions ?? [{ id: "11", to: { name: "Impact mitigated" } }, { id: "21", to: { name: "Resolved" } }] };
   globalThis.fetch = async (url, init = {}) => {
     calls.push({ url: String(url), body: init.body ? JSON.parse(init.body) : null });
     const body = String(url).endsWith("/transitions")
-      ? { transitions: [{ id: "11", to: { name: "Impact mitigated" } }, { id: "21", to: { name: "Resolved" } }] }
+      ? { transitions: state.transitions }
       : { ok: true, ts: "111.1", key: "INCY-1", fields: {} };
     return { ok: true, status: 200, json: async () => body, text: async () => "" };
   };
-  return { calls, restore: () => { globalThis.fetch = original; } };
+  return {
+    calls,
+    get transitions() { return state.transitions; },
+    set transitions(v) { state.transitions = v; },
+    restore: () => { globalThis.fetch = original; },
+  };
 }
 
 test("register mounts both incident routes via getRouter", () => {
@@ -231,7 +237,7 @@ test("an empty summary submits nothing", async () => {
   }
 });
 
-test("Mark as resolved transitions the issue instead of renaming it", async () => {
+test("Mark as resolved transitions, writes no fields, and removes the buttons", async () => {
   const restore = withEnv();
   const fetchStub = stubFetch();
   try {
@@ -241,19 +247,60 @@ test("Mark as resolved transitions the issue instead of renaming it", async () =
     const payload = {
       type: "block_actions",
       user: { id: "U9" },
+      container: { channel_id: "C_INC", message_ts: "222.2" },
+      message: {
+        text: "INCY-1 raised",
+        blocks: [{ type: "section" }, { type: "actions" }],
+      },
       actions: [{ action_id: "incident_resolved", value: ref }],
     };
     const raw = "payload=" + encodeURIComponent(JSON.stringify(payload));
     await post({ routes: h.routes, path: "/slack/incident/interact", headers: signedHeaders(raw), raw });
 
-    const stamped = fetchStub.calls.find((c) => c.url.endsWith("/issue/INCY-1") && c.body?.fields);
-    assert.ok(stamped, "expected a field update");
-    assert.ok(stamped.body.fields.customfield_12728, "Incident resolved should be stamped");
-    assert.equal(stamped.body.fields.summary, undefined, "the summary must not be renamed any more");
-
     const moved = fetchStub.calls.find((c) => c.url.endsWith("/transitions") && c.body?.transition);
     assert.ok(moved, "expected a transition");
     assert.equal(moved.body.transition.id, "21");
+
+    // Timestamps belong to the Jira automations that fire on the transition.
+    const edited = fetchStub.calls.find((c) => c.url.endsWith("/issue/INCY-1") && c.body?.fields);
+    assert.equal(edited, undefined, "must not write any issue fields");
+
+    const update = fetchStub.calls.find((c) => c.url.endsWith("chat.update"));
+    assert.ok(update, "expected the buttons to be removed");
+    assert.equal(update.body.ts, "222.2");
+    assert.deepEqual(update.body.blocks, [{ type: "section" }]);
+  } finally {
+    fetchStub.restore();
+    restore();
+  }
+});
+
+// The bug this guards: claiming a dedupe key before the work meant a failed
+// press was dead and silent for ten minutes.
+test("a failed transition leaves the buttons in place so it can be retried", async () => {
+  const restore = withEnv();
+  const fetchStub = stubFetch({ transitions: [] });
+  try {
+    const h = makeHarness();
+    register(h.app, h.options);
+    const ref = JSON.stringify({ k: "INCY-1", c: "C_INC", t: "111.1", r: "U9" });
+    const payload = {
+      type: "block_actions",
+      user: { id: "U9" },
+      container: { channel_id: "C_INC", message_ts: "222.2" },
+      message: { text: "INCY-1 raised", blocks: [{ type: "section" }, { type: "actions" }] },
+      actions: [{ action_id: "incident_resolved", value: ref }],
+    };
+    const raw = "payload=" + encodeURIComponent(JSON.stringify(payload));
+    await post({ routes: h.routes, path: "/slack/incident/interact", headers: signedHeaders(raw), raw });
+
+    assert.equal(fetchStub.calls.find((c) => c.url.endsWith("chat.update")), undefined, "buttons must survive a failure");
+
+    // And the same press works the second time, rather than being swallowed.
+    fetchStub.calls.length = 0;
+    fetchStub.transitions = [{ id: "21", to: { name: "Resolved" } }];
+    await post({ routes: h.routes, path: "/slack/incident/interact", headers: signedHeaders(raw), raw });
+    assert.ok(fetchStub.calls.find((c) => c.url.endsWith("/transitions") && c.body?.transition), "retry must reach Jira");
   } finally {
     fetchStub.restore();
     restore();
