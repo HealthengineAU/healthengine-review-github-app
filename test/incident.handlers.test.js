@@ -195,6 +195,9 @@ test("submitting the modal creates an INCY Incident and posts the triage message
 
     const created = fetchStub.calls.find((c) => c.url.endsWith("/rest/api/3/issue"));
     assert.ok(created, "expected a Jira create");
+    // Wiring, not just the client: a scoped token sent anywhere but the gateway
+    // authenticates and then reports the project as missing.
+    assert.equal(created.url, "https://api.atlassian.com/ex/jira/cloud-1/rest/api/3/issue");
     assert.equal(created.body.fields.project.key, "INCY");
     assert.equal(created.body.fields.issuetype.id, "10821");
     assert.equal(created.body.fields.summary, "Bookings failing");

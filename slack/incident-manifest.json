@@ -1,0 +1,93 @@
+{
+    "display_information": {
+        "name": "Incident Bot",
+        "description": "Healthengine's incident assistant",
+        "background_color": "#7EE1DC",
+        "long_description": "Incident Bot raises and tracks Healthengine incidents from Slack.\n\nStart one with /incident and a few words about what is wrong. It creates an Incident in Jira, hands back an INCY reference, and opens a place to work the problem, announced in #incidents so there is one list of what is happening. The incident has an ID and a home from the first minute, instead of being reconstructed from scattered messages afterwards.\n\nAs things change you can update its status, and once it is over you can ask for a draft incident report written from the conversation. Everything stays linked: the Jira issue points at the Slack discussion, the discussion points at the issue, and the report points at both.\n\nRaise things early. Severity and detail get sorted out afterwards. An incident that turns out to be nothing costs almost nothing, and one that nobody raised costs a great deal more."
+    },
+    "features": {
+        "app_home": {
+            "home_tab_enabled": false,
+            "messages_tab_enabled": true,
+            "messages_tab_read_only_enabled": true
+        },
+        "bot_user": {
+            "display_name": "Incy",
+            "always_online": true
+        },
+        "slash_commands": [
+            {
+                "command": "/incident",
+                "url": "https://github-bot-ai-reviewed-prs.onrender.com/slack/incident/command",
+                "description": "Raises a Jira incident and opens a triage thread. Details can come later.",
+                "should_escape": false
+            }
+        ]
+    },
+    "oauth_config": {
+        "scopes": {
+            "user": [
+                "channels:read",
+                "channels:history",
+                "groups:read",
+                "groups:history",
+                "im:history",
+                "mpim:history",
+                "users:read",
+                "files:read",
+                "reactions:read",
+                "emoji:read",
+                "canvases:read",
+                "search:read.public"
+            ],
+            "bot": [
+                "app_mentions:read",
+                "commands",
+                "chat:write",
+                "chat:write.public",
+                "chat:write.customize",
+                "channels:history",
+                "channels:join",
+                "channels:read",
+                "channels:manage",
+                "groups:history",
+                "groups:read",
+                "groups:write",
+                "im:history",
+                "im:write",
+                "mpim:history",
+                "mpim:write",
+                "reactions:read",
+                "reactions:write",
+                "files:read",
+                "files:write",
+                "canvases:read",
+                "canvases:write",
+                "search:read.public",
+                "pins:read",
+                "pins:write",
+                "bookmarks:read",
+                "bookmarks:write",
+                "links:read",
+                "links:write",
+                "emoji:read",
+                "usergroups:read",
+                "team:read",
+                "metadata.message:read",
+                "users:read",
+                "users:read.email",
+                "users.profile:read"
+            ]
+        },
+        "pkce_enabled": false
+    },
+    "settings": {
+        "interactivity": {
+            "is_enabled": true,
+            "request_url": "https://github-bot-ai-reviewed-prs.onrender.com/slack/incident/interact"
+        },
+        "org_deploy_enabled": false,
+        "socket_mode_enabled": false,
+        "token_rotation_enabled": false
+    }
+}
