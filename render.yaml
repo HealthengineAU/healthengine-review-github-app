@@ -26,6 +26,22 @@ projects:
         sync: false
       - key: SLACK_BOT_TOKEN
         sync: false
+      - key: INCIDENT_SLACK_SIGNING_SECRET
+        sync: false
+      - key: INCIDENT_SLACK_BOT_TOKEN
+        sync: false
+      - key: INCIDENT_CHANNEL_ID
+        sync: false
+      - key: INCIDENT_DUSTY_USER_ID
+        sync: false
+      - key: INCIDENT_JIRA_BASE_URL
+        sync: false
+      - key: INCIDENT_JIRA_EMAIL
+        sync: false
+      - key: INCIDENT_JIRA_API_TOKEN
+        sync: false
+      - key: INCIDENT_POSTMORTEMS_URL
+        sync: false
       region: ohio
       buildCommand: npm install
       startCommand: npm run start

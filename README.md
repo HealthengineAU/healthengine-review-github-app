@@ -62,6 +62,47 @@
     once the wake is queued. A comment on an issue in the agent's own repo —
     which it watches itself — goes straight to 👍. It means "received", not "done"
 
+- Starts incidents from Slack (`/incident`, see below):
+  - One short form raises an `INCY` Incident, posts a triage thread in the
+    incidents channel, reacts, pins it, and links the thread back onto the issue
+  - *Mitigated* / *Resolved* buttons rename the issue with the prefix Jira
+    automations key off, unpin the thread, and swap the reaction
+  - A *Draft incident report* button tags Dusty in the thread, which is what
+    turns the thread's transcript into the report
+
+## Incident command
+
+`/incident` is a **second Slack app**, not Dusty's. Its "Draft incident report"
+button tags `@Dusty`, and Dusty's proxy drops mentions authored by its own app —
+so this needs its own identity, and its `app_id` belongs in the sidecar's
+`SLACK_ALLOWED_BOT_APPS` for those mentions to be honoured.
+
+Slack's own Jira Cloud steps are not an option here for two reasons, both fatal:
+they authenticate per runner (so everyone raising an incident would need their
+own linked Atlassian account, mid-incident), and their *Edit issue* step cannot
+write custom fields — which is every field that matters on `INCY`.
+
+1. Create a Slack app from [`slack/incident-manifest.json`](slack/incident-manifest.json)
+2. Copy the **Signing Secret** → `INCIDENT_SLACK_SIGNING_SECRET` and the
+   **Bot User OAuth Token** (`xoxb-…`) → `INCIDENT_SLACK_BOT_TOKEN`
+3. Add the new app's `app_id` to `SLACK_ALLOWED_BOT_APPS`
+4. Set `INCIDENT_CHANNEL_ID` (the `C…` of the incidents channel), `INCIDENT_DUSTY_USER_ID`
+   (Dusty's `U…`), and the `JIRA_*` values for a **licensed service account** with
+   Create Issues, Edit Issues and — for real attribution — Modify Reporter on `INCY`
+
+Notes:
+
+- **Severity and Incident start are never asked for.** The Jira fields default to
+  SEV-4 and to creation time, and a severity question up front is exactly the
+  hesitation the command exists to remove. Severity is set later, in Jira.
+- **Reporter** is mapped from the Slack user's email to an Atlassian `accountId`.
+  Jira hides emails under some privacy settings; when the lookup misses, the
+  service account stays the reporter rather than the incident failing.
+- **The Slack thread is a remote issue link**, not a field — `INCY` has none for
+  it, and the `globalId` means a retry updates the link instead of adding another.
+- **No state is stored.** Every button carries the issue key, channel and thread
+  it acts on, so a restart loses nothing and a double-press is deduped.
+
 ## Tests
 
 Unit and handler tests run on the built-in Node test runner (no extra dependencies):
