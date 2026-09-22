@@ -65,10 +65,10 @@ test("incidentModal asks exactly one question", () => {
   assert.equal(modal.blocks.filter((b) => b.type === "input").length, 1);
 });
 
-test("triageText links the issue with Slack mrkdwn, not markdown", () => {
-  const text = triageText({ key: "INCY-1", url: "https://j/browse/INCY-1", summary: "Bookings failing" });
-  assert.equal(text, "*Incident <https://j/browse/INCY-1|INCY-1>* - Bookings failing - thread :thread:");
-  assert.ok(!text.includes("]("));
+test("triageText names the incident without linking it", () => {
+  const text = triageText({ key: "INCY-1", summary: "Bookings failing" });
+  assert.equal(text, "*INCY-1 raised* - Bookings failing — Reply in thread :thread:");
+  assert.ok(!text.includes("http"));
 });
 
 // Resolving is the step after mitigating, not an alternative to it, so the
@@ -81,6 +81,8 @@ test("threadBlocks offers only a green Mark as mitigated, carrying the ref", () 
   assert.equal(actions.elements[0].style, "primary");
   assert.equal(decodeRef(actions.elements[0].value).key, "INCY-1");
   const text = blocks[0].text.text;
+  // The tracker link lives here, not in the channel message above it.
+  assert.match(text, /:jira: \*<https:\/\/j\/browse\/INCY-1\|INCY-1 tracker>\*/);
   assert.match(text, /Mark as mitigated when the immediate impact or disruption/);
   assert.ok(!text.includes("resolved"));
 });
