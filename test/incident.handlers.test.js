@@ -189,9 +189,9 @@ test("INCIDENT_JIRA_CLOUD_ID sets the REST base", async () => {
   }
 });
 
-// The modal vanishes on ack and the Jira/Slack round trips take seconds; without
-// this the user sees nothing at all and presses the command again.
-test("submitting the modal says it is working, then replaces that with the result", async () => {
+// One ephemeral, not two: a progress note could not be replaced reliably and
+// stacked on top of the result instead.
+test("submitting the modal answers the command exactly once", async () => {
   const restore = withEnv();
   const fetchStub = stubFetch();
   const responses = [];
@@ -226,16 +226,42 @@ test("submitting the modal says it is working, then replaces that with the resul
     const raw = "payload=" + encodeURIComponent(JSON.stringify(payload));
     await post({ routes: h.routes, path: "/slack/incident/interact", headers: signedHeaders(raw), raw });
 
-    assert.equal(responses.length, 2, "expected a progress note and a result");
-    assert.match(responses[0].text, /Raising incident/);
-    assert.ok(!responses[0].replace_original, "the first one has nothing to replace");
-    assert.equal(responses[1].replace_original, true);
+    assert.equal(responses.length, 1);
+    assert.ok(!responses[0].replace_original, "nothing to replace");
     assert.deepEqual(
-      responses[1].blocks.find((b) => b.type === "actions").elements.map((e) => e.action_id),
+      responses[0].blocks.find((b) => b.type === "actions").elements.map((e) => e.action_id),
       ["incident_dismiss", "incident_view_thread"],
     );
   } finally {
     globalThis.fetch = original;
+    fetchStub.restore();
+    restore();
+  }
+});
+
+test("Skip clears both report buttons and does nothing else", async () => {
+  const restore = withEnv();
+  const fetchStub = stubFetch();
+  try {
+    const h = makeHarness();
+    register(h.app, h.options);
+    const ref = JSON.stringify({ k: "INCY-1", c: "C_INC", t: "111.1", r: "U9" });
+    const payload = {
+      type: "block_actions",
+      user: { id: "U9" },
+      container: { channel_id: "C_INC", message_ts: "222.2" },
+      message: { text: "INCY-1 marked as Resolved", blocks: [{ type: "section" }, { type: "actions" }] },
+      actions: [{ action_id: "incident_skip_report", value: ref }],
+    };
+    const raw = "payload=" + encodeURIComponent(JSON.stringify(payload));
+    await post({ routes: h.routes, path: "/slack/incident/interact", headers: signedHeaders(raw), raw });
+
+    const update = fetchStub.calls.find((c) => c.url.endsWith("chat.update"));
+    assert.deepEqual(update.body.blocks, [{ type: "section" }]);
+    // No Dusty summons, no DM, no Jira.
+    assert.ok(!fetchStub.calls.some((c) => c.url.endsWith("chat.postMessage")));
+    assert.ok(!fetchStub.calls.some((c) => c.url.includes("/rest/api/")));
+  } finally {
     fetchStub.restore();
     restore();
   }
@@ -380,7 +406,7 @@ test("Mark as resolved transitions, writes no fields, and removes the buttons", 
   }
 });
 
-test("Revert to open transitions back, re-pins, and says reverted in both places", async () => {
+test("Revert to open transitions back, re-pins, and stays out of the channel", async () => {
   const restore = withEnv();
   const fetchStub = stubFetch({ transitions: [{ id: "31", to: { id: "11985", name: "Open" } }] });
   try {
@@ -403,14 +429,15 @@ test("Revert to open transitions back, re-pins, and says reverted in both places
     // Live again, so the triage message goes back on the pin board and the siren.
     assert.ok(fetchStub.calls.some((c) => c.url.endsWith("pins.add") && c.body.timestamp === "111.1"));
     const reacted = fetchStub.calls.find((c) => c.url.endsWith("reactions.add"));
-    assert.equal(reacted.body.name, "alert");
+    assert.equal(reacted.body.name, "rotating_light");
     assert.ok(
-      fetchStub.calls.some((c) => c.url.endsWith("reactions.remove") && c.body.name === "large_blue_circle"),
+      fetchStub.calls.some((c) => c.url.endsWith("reactions.remove") && c.body.name === "large_orange_circle"),
       "expected the mitigated reaction cleared",
     );
 
+    // A revert is a working update; only resolution interrupts the channel.
     const channelPost = fetchStub.calls.find((c) => c.url.endsWith("chat.postMessage") && !c.body.thread_ts);
-    assert.equal(channelPost.body.text, ":x: *INCY-905* reverted to *Open* by someone");
+    assert.equal(channelPost, undefined, "must not post to the channel");
 
     const threadPost = fetchStub.calls.find((c) => c.url.endsWith("chat.postMessage") && c.body.thread_ts === "111.1");
     assert.deepEqual(

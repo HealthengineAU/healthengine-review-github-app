@@ -81,7 +81,7 @@ test("threadBlocks offers only a green Mark as mitigated, carrying the ref", () 
   assert.equal(actions.elements[0].style, "primary");
   assert.equal(decodeRef(actions.elements[0].value).key, "INCY-1");
   const text = blocks[0].text.text;
-  assert.match(text, /Mark as \*mitigated\* once ready/);
+  assert.match(text, /Mark as mitigated when the immediate impact or disruption/);
   assert.ok(!text.includes("resolved"));
 });
 
@@ -109,7 +109,7 @@ test("createdBlocks keeps Dismiss when there is no permalink", () => {
 test("statusChannelText names the key, the status and the human", () => {
   assert.equal(
     statusChannelText({ key: "INCY-1", status: "mitigated", who: "Ann Example" }),
-    ":large_blue_circle: *INCY-1* marked as *Mitigated* by Ann Example",
+    ":large_orange_circle: *INCY-1* marked as *Mitigated* by Ann Example",
   );
   assert.equal(
     statusChannelText({ key: "INCY-905", status: "resolved", who: "Ann Example" }),
@@ -129,10 +129,10 @@ test("statusThreadBlocks offers the next step for each status", () => {
   const ids = (blocks) => blocks.find((b) => b.type === "actions").elements.map((e) => e.action_id);
   const styles = (blocks) => blocks.find((b) => b.type === "actions").elements.map((e) => e.style);
 
-  assert.deepEqual(ids(at("mitigated")), ["incident_resolved", "incident_reopen"]);
-  assert.deepEqual(styles(at("mitigated")), ["primary", "danger"]);
-  assert.deepEqual(ids(at("resolved")), ["incident_draft_report"]);
-  assert.deepEqual(styles(at("resolved")), ["primary"]);
+  assert.deepEqual(ids(at("mitigated")), ["incident_reopen", "incident_resolved"]);
+  assert.deepEqual(styles(at("mitigated")), ["danger", "primary"]);
+  assert.deepEqual(ids(at("resolved")), ["incident_draft_report", "incident_skip_report"]);
+  assert.deepEqual(styles(at("resolved")), ["primary", undefined]);
   // Reverting puts it back where it started, buttons and all.
   assert.deepEqual(ids(at("open")), ["incident_mitigated"]);
 });
