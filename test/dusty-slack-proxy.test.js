@@ -66,10 +66,22 @@ test("classifyMention wakes on an allow-listed app, by either app_id or bot_id",
   }
 });
 
+test("classifyMention takes the requester, not the app's own bot user, as the actor", () => {
+  const out = classifyMention(
+    {
+      type: "app_mention", channel: "C1", ts: "1.1", bot_id: "B02", app_id: "A02", user: "UBOT",
+      text: "<@B01|Dusty> write it up. Requested by <@U9|Ann>.",
+    },
+    { teamId: "T1", allowedTeam: "T1", allowedBots: parseAllowedBots("A02"), selfUserId: "B01" },
+  );
+  assert.equal(out.actor, "U9");
+});
+
 test("classifyMention ignores an allow-listed app that tags nobody to report back to", () => {
   const allowedBots = parseAllowedBots("A02");
   const base = { type: "app_mention", channel: "C1", ts: "1.1", bot_id: "B02", app_id: "A02" };
   assert.equal(classifyMention({ ...base, text: "<@B01|Dusty> write it up." }, { allowedBots, selfUserId: "B01" }), null);
+  assert.equal(classifyMention({ ...base, user: "UBOT", text: "<@B01|Dusty> write it up. <@UBOT>" }, { allowedBots, selfUserId: "B01" }), null);
   // Without our own id, the only mention present is indistinguishable from Dusty's.
   assert.equal(classifyMention({ ...base, text: "<@B01|Dusty> write it up. <@U9>" }, { allowedBots }), null);
 });

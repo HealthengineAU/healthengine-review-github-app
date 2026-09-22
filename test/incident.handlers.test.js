@@ -58,7 +58,7 @@ async function post({ routes, path, headers = {}, raw }) {
   req.emit("data", Buffer.from(raw));
   req.emit("end");
   await pending;
-  for (let i = 0; i < 50; i++) await Promise.resolve();
+  for (let i = 0; i < 300; i++) await Promise.resolve();
   return { statusCode, sent };
 }
 
@@ -75,7 +75,7 @@ function signedHeaders(raw, secret = SECRET) {
 function stubFetch({ transitions } = {}) {
   const calls = [];
   const original = globalThis.fetch;
-  const state = { transitions: transitions ?? [{ id: "11", to: { name: "Impact mitigated" } }, { id: "21", to: { name: "Resolved" } }] };
+  const state = { transitions: transitions ?? [{ id: "11", to: { id: "11987", name: "Impact mitigated" } }, { id: "21", to: { id: "11986", name: "Resolved" } }] };
   globalThis.fetch = async (url, init = {}) => {
     calls.push({ url: String(url), body: init.body ? JSON.parse(init.body) : null });
     const body = String(url).endsWith("/transitions")
@@ -189,6 +189,90 @@ test("INCIDENT_JIRA_CLOUD_ID sets the REST base", async () => {
   }
 });
 
+// The modal vanishes on ack and the Jira/Slack round trips take seconds; without
+// this the user sees nothing at all and presses the command again.
+test("submitting the modal says it is working, then replaces that with the result", async () => {
+  const restore = withEnv();
+  const fetchStub = stubFetch();
+  const responses = [];
+  const original = globalThis.fetch;
+  globalThis.fetch = async (url, init = {}) => {
+    if (String(url).startsWith("https://hooks.slack.test/")) {
+      responses.push(JSON.parse(init.body));
+      return { ok: true, status: 200, json: async () => ({ ok: true }), text: async () => "" };
+    }
+    if (String(url).includes("chat.getPermalink")) {
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({ ok: true, permalink: "https://s/archives/C_INC/p1" }),
+        text: async () => "",
+      };
+    }
+    return original(url, init);
+  };
+  try {
+    const h = makeHarness();
+    register(h.app, h.options);
+    const payload = {
+      type: "view_submission",
+      user: { id: "U9" },
+      view: {
+        callback_id: "incident_create",
+        private_metadata: JSON.stringify({ responseUrl: "https://hooks.slack.test/r1" }),
+        state: { values: { summary: { value: { value: "Bookings failing" } } } },
+      },
+    };
+    const raw = "payload=" + encodeURIComponent(JSON.stringify(payload));
+    await post({ routes: h.routes, path: "/slack/incident/interact", headers: signedHeaders(raw), raw });
+
+    assert.equal(responses.length, 2, "expected a progress note and a result");
+    assert.match(responses[0].text, /Raising incident/);
+    assert.ok(!responses[0].replace_original, "the first one has nothing to replace");
+    assert.equal(responses[1].replace_original, true);
+    assert.deepEqual(
+      responses[1].blocks.find((b) => b.type === "actions").elements.map((e) => e.action_id),
+      ["incident_dismiss", "incident_view_thread"],
+    );
+  } finally {
+    globalThis.fetch = original;
+    fetchStub.restore();
+    restore();
+  }
+});
+
+test("Dismiss and View incident thread both clear the ephemeral", async () => {
+  const restore = withEnv();
+  const sent = [];
+  const original = globalThis.fetch;
+  globalThis.fetch = async (url, init = {}) => {
+    sent.push({ url: String(url), body: init.body ? JSON.parse(init.body) : null });
+    return { ok: true, status: 200, json: async () => ({ ok: true }), text: async () => "" };
+  };
+  try {
+    const h = makeHarness();
+    register(h.app, h.options);
+    const payload = {
+      type: "block_actions",
+      user: { id: "U9" },
+      response_url: "https://hooks.slack.test/r1",
+      // A url button carries no value, so this must be handled before the ref decode.
+      actions: [{ action_id: "incident_view_thread", url: "https://s/archives/C/p1" }],
+    };
+    for (const action_id of ["incident_view_thread", "incident_dismiss"]) {
+      payload.actions = [{ action_id }];
+      const raw = "payload=" + encodeURIComponent(JSON.stringify(payload));
+      await post({ routes: h.routes, path: "/slack/incident/interact", headers: signedHeaders(raw), raw });
+    }
+
+    assert.deepEqual(sent.map((c) => c.url), ["https://hooks.slack.test/r1", "https://hooks.slack.test/r1"]);
+    assert.ok(sent.every((c) => c.body.delete_original === true));
+  } finally {
+    globalThis.fetch = original;
+    restore();
+  }
+});
+
 test("a malformed interaction payload is ignored rather than throwing", async () => {
   const restore = withEnv();
   const fetchStub = stubFetch();
@@ -296,6 +380,49 @@ test("Mark as resolved transitions, writes no fields, and removes the buttons", 
   }
 });
 
+test("Revert to open transitions back, re-pins, and says reverted in both places", async () => {
+  const restore = withEnv();
+  const fetchStub = stubFetch({ transitions: [{ id: "31", to: { id: "11985", name: "Open" } }] });
+  try {
+    const h = makeHarness();
+    register(h.app, h.options);
+    const ref = JSON.stringify({ k: "INCY-905", c: "C_INC", t: "111.1", r: "U9" });
+    const payload = {
+      type: "block_actions",
+      user: { id: "U9" },
+      container: { channel_id: "C_INC", message_ts: "222.2" },
+      message: { text: "INCY-905 marked as Mitigated", blocks: [{ type: "section" }, { type: "actions" }] },
+      actions: [{ action_id: "incident_reopen", value: ref }],
+    };
+    const raw = "payload=" + encodeURIComponent(JSON.stringify(payload));
+    await post({ routes: h.routes, path: "/slack/incident/interact", headers: signedHeaders(raw), raw });
+
+    const moved = fetchStub.calls.find((c) => c.url.endsWith("/transitions") && c.body?.transition);
+    assert.equal(moved.body.transition.id, "31");
+
+    // Live again, so the triage message goes back on the pin board and the siren.
+    assert.ok(fetchStub.calls.some((c) => c.url.endsWith("pins.add") && c.body.timestamp === "111.1"));
+    const reacted = fetchStub.calls.find((c) => c.url.endsWith("reactions.add"));
+    assert.equal(reacted.body.name, "alert");
+    assert.ok(
+      fetchStub.calls.some((c) => c.url.endsWith("reactions.remove") && c.body.name === "large_blue_circle"),
+      "expected the mitigated reaction cleared",
+    );
+
+    const channelPost = fetchStub.calls.find((c) => c.url.endsWith("chat.postMessage") && !c.body.thread_ts);
+    assert.equal(channelPost.body.text, ":x: *INCY-905* reverted to *Open* by someone");
+
+    const threadPost = fetchStub.calls.find((c) => c.url.endsWith("chat.postMessage") && c.body.thread_ts === "111.1");
+    assert.deepEqual(
+      threadPost.body.blocks.find((b) => b.type === "actions").elements.map((e) => e.action_id),
+      ["incident_mitigated"],
+    );
+  } finally {
+    fetchStub.restore();
+    restore();
+  }
+});
+
 // The bug this guards: claiming a dedupe key before the work meant a failed
 // press was dead and silent for ten minutes.
 test("a failed transition leaves the buttons in place so it can be retried", async () => {
@@ -319,7 +446,7 @@ test("a failed transition leaves the buttons in place so it can be retried", asy
 
     // And the same press works the second time, rather than being swallowed.
     fetchStub.calls.length = 0;
-    fetchStub.transitions = [{ id: "21", to: { name: "Resolved" } }];
+    fetchStub.transitions = [{ id: "21", to: { id: "11986", name: "Resolved" } }];
     await post({ routes: h.routes, path: "/slack/incident/interact", headers: signedHeaders(raw), raw });
     assert.ok(fetchStub.calls.find((c) => c.url.endsWith("/transitions") && c.body?.transition), "retry must reach Jira");
   } finally {

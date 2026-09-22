@@ -2,7 +2,9 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 
 import { classifyMention } from "../lib/dusty-slack-proxy.js";
+import { LABEL, STATUS } from "../lib/incident/constants.js";
 import {
+  createdBlocks,
   decodeRef,
   unescapeSlackText,
   prefillSummary,
@@ -10,6 +12,7 @@ import {
   encodeRef,
   incidentModal,
   statusChannelText,
+  statusThreadBlocks,
   summaryFromView,
   thanksBlocks,
   threadBlocks,
@@ -64,26 +67,87 @@ test("incidentModal asks exactly one question", () => {
 
 test("triageText links the issue with Slack mrkdwn, not markdown", () => {
   const text = triageText({ key: "INCY-1", url: "https://j/browse/INCY-1", summary: "Bookings failing" });
-  assert.equal(text, "*Incident <https://j/browse/INCY-1|INCY-1> raised* - Bookings failing - please reply in thread :thread:");
+  assert.equal(text, "*Incident <https://j/browse/INCY-1|INCY-1>* - Bookings failing - thread :thread:");
   assert.ok(!text.includes("]("));
 });
 
-test("threadBlocks puts the same ref on both status buttons", () => {
+// Resolving is the step after mitigating, not an alternative to it, so the
+// opening reply offers one button and no shortcut past it.
+test("threadBlocks offers only a green Mark as mitigated, carrying the ref", () => {
   const ref = encodeRef({ key: "INCY-1", channel: "C1", thread: "1.1", reporter: "U9" });
   const blocks = threadBlocks({ key: "INCY-1", url: "https://j/browse/INCY-1", reporter: "U9", ref });
   const actions = blocks.find((b) => b.type === "actions");
+  assert.deepEqual(actions.elements.map((e) => e.action_id), ["incident_mitigated"]);
+  assert.equal(actions.elements[0].style, "primary");
+  assert.equal(decodeRef(actions.elements[0].value).key, "INCY-1");
+  const text = blocks[0].text.text;
+  assert.match(text, /Mark as \*mitigated\* once ready/);
+  assert.ok(!text.includes("resolved"));
+});
+
+test("createdBlocks offers the thread as a green button, not a bare url", () => {
+  const blocks = createdBlocks({ key: "INCY-1", channel: "C_INC", threadUrl: "https://s/archives/C/p1" });
+  const [dismiss, view] = blocks.find((b) => b.type === "actions").elements;
+  assert.equal(dismiss.text.text, "Dismiss");
+  assert.equal(dismiss.style, undefined, "Dismiss is the quiet one");
+  assert.equal(view.style, "primary");
+  assert.equal(view.text.text, "View INCY-1 thread");
+  assert.equal(view.url, "https://s/archives/C/p1");
+  // A bare permalink would unfurl into a preview several lines tall.
+  assert.ok(!blocks[0].text.text.includes("https://"));
+});
+
+// getPermalink is best-effort, so the message has to stand without it.
+test("createdBlocks keeps Dismiss when there is no permalink", () => {
+  const blocks = createdBlocks({ key: "INCY-1", channel: "C_INC", threadUrl: "" });
   assert.deepEqual(
-    actions.elements.map((e) => e.action_id),
-    ["incident_mitigated", "incident_resolved"],
+    blocks.find((b) => b.type === "actions").elements.map((e) => e.action_id),
+    ["incident_dismiss"],
   );
-  assert.ok(actions.elements.every((e) => decodeRef(e.value).key === "INCY-1"));
 });
 
 test("statusChannelText names the key, the status and the human", () => {
   assert.equal(
     statusChannelText({ key: "INCY-1", status: "mitigated", who: "Ann Example" }),
-    ":white_check_mark: *INCY-1* marked as *Mitigated* by Ann Example",
+    ":large_blue_circle: *INCY-1* marked as *Mitigated* by Ann Example",
   );
+  assert.equal(
+    statusChannelText({ key: "INCY-905", status: "resolved", who: "Ann Example" }),
+    ":white_check_mark: *INCY-905* marked as *Resolved* by Ann Example",
+  );
+  // A revert is a correction; "marked as" would read as just another step.
+  assert.equal(
+    statusChannelText({ key: "INCY-905", status: "open", who: "Reece Como" }),
+    ":x: *INCY-905* reverted to *Open* by Reece Como",
+  );
+});
+
+test("statusThreadBlocks offers the next step for each status", () => {
+  const ref = encodeRef({ key: "INCY-1", channel: "C1", thread: "1.1", reporter: "U9" });
+  const at = (status) =>
+    statusThreadBlocks({ key: "INCY-1", url: "https://j/browse/INCY-1", status, who: "Ann", ref });
+  const ids = (blocks) => blocks.find((b) => b.type === "actions").elements.map((e) => e.action_id);
+  const styles = (blocks) => blocks.find((b) => b.type === "actions").elements.map((e) => e.style);
+
+  assert.deepEqual(ids(at("mitigated")), ["incident_resolved", "incident_reopen"]);
+  assert.deepEqual(styles(at("mitigated")), ["primary", "danger"]);
+  assert.deepEqual(ids(at("resolved")), ["incident_draft_report"]);
+  assert.deepEqual(styles(at("resolved")), ["primary"]);
+  // Reverting puts it back where it started, buttons and all.
+  assert.deepEqual(ids(at("open")), ["incident_mitigated"]);
+});
+
+test("only a resolved incident promises the auto-close", () => {
+  const ref = encodeRef({ key: "INCY-1", channel: "C1", thread: "1.1", reporter: "U9" });
+  const text = (status) =>
+    statusThreadBlocks({ key: "INCY-1", url: "https://j/browse/INCY-1", status, who: "Ann", ref })[0].text.text;
+
+  assert.equal(
+    text("resolved"),
+    ":white_check_mark: *<https://j/browse/INCY-1|INCY-1>* marked as *Resolved* by Ann\n\n_Incident will auto-close once incident report is attached_",
+  );
+  assert.ok(!text("mitigated").includes("auto-close"));
+  assert.ok(!text("open").includes("auto-close"));
 });
 
 // The contract that actually matters: Dusty's proxy takes the FIRST non-Dusty
@@ -124,38 +188,56 @@ test("findAccountId survives a failing lookup rather than blocking the incident"
   assert.equal(await findAccountId(jira, "ann@healthengine.com.au"), null);
 });
 
-test("incidentDescription names the reporter in bold", () => {
+// The Incident Slack field holds the thread, so the description does not.
+test("incidentDescription is one unadorned sentence", () => {
   const doc = incidentDescription({ who: "Ann Example" });
   assert.equal(doc.type, "doc");
   assert.equal(doc.version, 1);
-  const bold = doc.content[0].content.find((n) => n.marks?.[0]?.type === "strong");
-  assert.equal(bold.text, "Ann Example");
+  assert.equal(doc.content.length, 1);
+  assert.deepEqual(doc.content[0].content, [
+    { type: "text", text: "Raised via Slack by Ann Example" },
+  ]);
 });
 
-test("incidentDescription links the thread only once there is one", () => {
-  const before = incidentDescription({ who: "Ann Example" });
-  const after = incidentDescription({ who: "Ann Example", threadUrl: "https://slack.example/x" });
-  assert.equal(before.content.length, 1);
-  assert.equal(after.content.length, 2);
-  assert.equal(after.content[1].content[0].marks[0].attrs.href, "https://slack.example/x");
-});
-
-// Transition ids are per-workflow; matching the destination name is what keeps
-// the buttons working after someone edits the board.
-test("transitionTo matches the destination status by name, ignoring case", async () => {
+// Transition ids are per-workflow; matching the destination STATUS id is what
+// keeps the buttons working after someone edits or renames on the board.
+test("transitionTo matches the destination status by id, not its name", async () => {
   const calls = [];
   const jira = async (path, opts) => {
     calls.push({ path, opts });
     if (opts?.method === "POST") return null;
-    return { transitions: [{ id: "11", to: { name: "Impact mitigated" } }, { id: "21", to: { name: "Resolved" } }] };
+    return {
+      transitions: [
+        { id: "11", to: { id: "11987", name: "Renamed since" } },
+        { id: "21", to: { id: "11986", name: "Resolved" } },
+      ],
+    };
   };
-  await transitionTo(jira, "INCY-1", "impact MITIGATED");
+  await transitionTo(jira, "INCY-1", STATUS.mitigated, LABEL.mitigated);
   assert.equal(calls.at(-1).opts.body.transition.id, "11");
 });
 
+// Two people pressing at once, or a retry after a partial failure.
+test("transitionTo is a no-op when the issue is already there", async () => {
+  const calls = [];
+  const jira = async (path, opts) => {
+    calls.push({ path, opts });
+    if (path.endsWith("/transitions")) return { transitions: [] };
+    return { fields: { status: { id: "11986", name: "Resolved" } } };
+  };
+  await transitionTo(jira, "INCY-1", STATUS.resolved, LABEL.resolved);
+  assert.ok(!calls.some((c) => c.opts?.method === "POST"));
+});
+
 test("transitionTo names what was reachable when the status is not", async () => {
-  const jira = async () => ({ transitions: [{ id: "21", to: { name: "Resolved" } }] });
-  await assert.rejects(() => transitionTo(jira, "INCY-1", "Impact mitigated"), /available: Resolved/);
+  const jira = async (path) =>
+    path.endsWith("/transitions")
+      ? { transitions: [{ id: "21", to: { id: "11986", name: "Resolved" } }] }
+      : { fields: { status: { id: "11985", name: "Open" } } };
+  await assert.rejects(
+    () => transitionTo(jira, "INCY-1", STATUS.mitigated, LABEL.mitigated),
+    /no transition to "Mitigated" from Open \(available: Resolved\)/,
+  );
 });
 
 
