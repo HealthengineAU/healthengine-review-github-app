@@ -36,6 +36,8 @@ projects:
         sync: false
       - key: INCIDENT_JIRA_BASE_URL
         sync: false
+      - key: INCIDENT_JIRA_CLOUD_ID
+        sync: false
       - key: INCIDENT_JIRA_EMAIL
         sync: false
       - key: INCIDENT_JIRA_API_TOKEN

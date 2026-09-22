@@ -13,6 +13,7 @@ const ENV = {
   INCIDENT_CHANNEL_ID: "C_INC",
   INCIDENT_DUSTY_USER_ID: "U_DUSTY",
   INCIDENT_JIRA_BASE_URL: "https://hejira.atlassian.net",
+  INCIDENT_JIRA_CLOUD_ID: "cloud-1",
   INCIDENT_JIRA_EMAIL: "svc@healthengine.com.au",
   INCIDENT_JIRA_API_TOKEN: "tok",
 };
@@ -113,7 +114,7 @@ test("register tolerates being called with no options at all", () => {
 
 // A half-configured deploy must not mount a command that will fail mid-incident.
 test("register refuses to mount when configuration is incomplete", () => {
-  for (const key of ["INCIDENT_CHANNEL_ID", "INCIDENT_DUSTY_USER_ID", "INCIDENT_JIRA_EMAIL", "INCIDENT_JIRA_API_TOKEN"]) {
+  for (const key of ["INCIDENT_CHANNEL_ID", "INCIDENT_DUSTY_USER_ID", "INCIDENT_JIRA_EMAIL", "INCIDENT_JIRA_API_TOKEN", "INCIDENT_JIRA_CLOUD_ID"]) {
     const restore = withEnv({ [key]: undefined });
     try {
       const h = makeHarness();

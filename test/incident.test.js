@@ -16,6 +16,7 @@ import {
 import { alreadySeen } from "../lib/incident/handlers.js";
 import {
   browseUrl,
+  jiraClient,
   findAccountId,
   incidentDescription,
   jiraTimestamp,
@@ -165,4 +166,23 @@ test("transitionTo matches the destination status by name, ignoring case", async
 test("transitionTo names what was reachable when the status is not", async () => {
   const jira = async () => ({ transitions: [{ id: "21", to: { name: "Resolved" } }] });
   await assert.rejects(() => transitionTo(jira, "INCY-1", "Impact mitigated"), /available: Resolved/);
+});
+
+// The bug this guards: a scoped token sent to the site URL authenticates but
+// carries no scopes, and Jira reports the project as missing.
+test("jiraClient talks to the gateway, not the site", async () => {
+  const seen = [];
+  const original = globalThis.fetch;
+  globalThis.fetch = async (url, init) => {
+    seen.push({ url: String(url), auth: init.headers.authorization });
+    return { ok: true, status: 200, json: async () => ({}), text: async () => "" };
+  };
+  try {
+    const jira = jiraClient({ cloudId: "cloud-1", email: "svc@example.com", token: "t" });
+    await jira("/rest/api/3/issue", { method: "POST", body: {} });
+    assert.equal(seen[0].url, "https://api.atlassian.com/ex/jira/cloud-1/rest/api/3/issue");
+    assert.ok(seen[0].auth.startsWith("Basic "));
+  } finally {
+    globalThis.fetch = original;
+  }
 });
