@@ -575,6 +575,7 @@ test("choosing this channel triages there, and the Jira description names it", a
 
     const created = fetchStub.calls.find((c) => c.url.endsWith("/rest/api/3/issue"));
     assert.equal(created.body.fields.summary, "Bookings failing");
+    assert.equal(created.body.fields.labels, undefined);
     assert.equal(
       created.body.fields.description.content[0].content[0].text,
       "Raised via Slack by Ann Example in #bookings",
@@ -630,6 +631,7 @@ test("a dedicated channel is private and code-named, with the summary kept insid
 
     const created = fetchStub.calls.find((c) => c.url.endsWith("/rest/api/3/issue"));
     assert.match(created.body.fields.summary, /^[A-Z][a-z]+ [A-Z][a-z]+ Incident$/);
+    assert.deepEqual(created.body.fields.labels, ["private"]);
     const slug = created.body.fields.summary.replace(/ Incident$/, "").toLowerCase().replace(" ", "-");
     assert.equal(made.body.name, `incy-1-${slug}`);
     assert.ok(
@@ -690,4 +692,55 @@ test("in a dedicated channel, the report request goes to the channel", async () 
     fetchStub.restore();
     restore();
   }
+});
+
+async function draftReport(ref, slack = {}) {
+  const restore = withEnv();
+  const fetchStub = stubFetch({ slack });
+  try {
+    const h = makeHarness();
+    register(h.app, h.options);
+    const raw = press("incident_draft_report", ref);
+    await post({ routes: h.routes, path: "/slack/incident/interact", headers: signedHeaders(raw), raw });
+    return fetchStub.calls;
+  } finally {
+    fetchStub.restore();
+    restore();
+  }
+}
+
+const promptIndex = (calls) =>
+  calls.findIndex((c) => c.url.endsWith("chat.postMessage") && c.body.text.startsWith("<@U_DUSTY>"));
+
+test("Draft report invites Dusty into a dedicated channel before tagging it", async () => {
+  const calls = await draftReport({ k: "INCY-1", c: "C_NEW", t: "111.1", r: "U9", d: 1 });
+  const invite = calls.findIndex((c) => c.url.endsWith("conversations.invite"));
+  assert.deepEqual(calls[invite].body, { channel: "C_NEW", users: "U_DUSTY" });
+  assert.ok(invite < promptIndex(calls), "Dusty must be in the channel before the mention");
+});
+
+test("Draft report invites Dusty into a thread's channel too", async () => {
+  const calls = await draftReport({ k: "INCY-1", c: "C_INC", t: "111.1", r: "U9" });
+  const invite = calls.findIndex((c) => c.url.endsWith("conversations.invite"));
+  assert.deepEqual(calls[invite].body, { channel: "C_INC", users: "U_DUSTY" });
+  assert.ok(invite < promptIndex(calls));
+});
+
+test("Draft report carries on when Dusty is already in the channel", async () => {
+  const calls = await draftReport(
+    { k: "INCY-1", c: "C_NEW", t: "111.1", r: "U9", d: 1 },
+    { "conversations.invite": { ok: false, error: "already_in_channel" } },
+  );
+  assert.notEqual(promptIndex(calls), -1);
+});
+
+test("a failed invite stops the Dusty prompt and tells whoever pressed", async () => {
+  const calls = await draftReport(
+    { k: "INCY-1", c: "C_NEW", t: "111.1", r: "U9", d: 1 },
+    { "conversations.invite": { ok: false, error: "cant_invite" } },
+  );
+  assert.equal(promptIndex(calls), -1);
+  assert.ok(!calls.some((c) => c.url.endsWith("chat.update")), "the button stays for a retry");
+  const warning = calls.find((c) => c.url.endsWith("chat.postMessage") && c.body.channel === "U9");
+  assert.match(warning.body.text, /conversations\.invite: cant_invite/);
 });

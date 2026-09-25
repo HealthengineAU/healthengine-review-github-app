@@ -68,12 +68,13 @@
     links the thread back onto the issue
   - Or it opens a code-named private channel: the Jira summary is the code name
     (`Wintery Snowfall Incident`) and the channel adds the key (`incy-1234-wintery-snowfall`).
-    The summary is posted only inside it, and updates go to the channel rather
-    than a thread
+    The issue is labelled `private`, the summary is posted only inside the
+    channel, and updates go to the channel rather than a thread
   - *Mitigated* / *Resolved* buttons rename the issue with the prefix Jira
     automations key off, unpin the thread, and swap the reaction
   - A *Draft incident report* button tags Dusty in the thread, which is what
-    turns the thread's transcript into the report
+    turns the thread's transcript into the report. It invites Dusty to the
+    channel first, if Dusty isn't already there
 
 ## Incident command
 
@@ -102,7 +103,8 @@ Notes:
   hesitation the command exists to remove. Severity is set later, in Jira.
 - **This channel** is offered only where the app can post: a public channel, or
   a private one it has been added to. Private incident channels need
-  `groups:write`; the lookup needs `channels:read` and `groups:read`.
+  `groups:write`; the lookup needs `channels:read` and `groups:read`. Inviting
+  Dusty into a public channel needs `channels:manage`.
 - **Reporter** is mapped from the Slack user's email to an Atlassian `accountId`.
   Jira hides emails under some privacy settings; when the lookup misses, the
   service account stays the reporter rather than the incident failing.
