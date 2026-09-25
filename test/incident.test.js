@@ -89,10 +89,10 @@ test("incidentModal defaults to the channel it was opened in", () => {
   const radio = destinations(modal);
   assert.deepEqual(radio.options.map((o) => o.value), ["current", "incidents", "dedicated"]);
   assert.equal(radio.initial_option.value, "current");
-  assert.equal(radio.options[0].text.text, "This channel (#bookings)");
+  assert.equal(radio.options[0].text.text, "#bookings");
   assert.equal(radio.options[1].text.text, "#incidents");
   assert.ok(radio.options.every((o) => o.text.type === "plain_text"), "labels must not be channel links");
-  assert.match(radio.options[2].description.text, /incy-1024-wintery-snowfall/);
+  assert.equal(radio.options[2].description.text, "e.g. incy-1024-wintery-snowfall");
   assert.ok(!modal.blocks.some((b) => b.type === "context"));
   assert.deepEqual(viewOrigin(modal), origin);
   assert.equal(viewResponseUrl(modal), "https://r");
@@ -111,7 +111,10 @@ test("incidentModal defaults to #incidents from a DM, or from #incidents itself"
 test("incidentModal explains a channel it cannot post in instead of offering it", () => {
   const modal = incidentModal({ origin: { id: "C_PRIV", name: null, postable: false }, incidents: INCIDENTS });
   assert.deepEqual(destinations(modal).options.map((o) => o.value), ["incidents", "dedicated"]);
-  assert.match(modal.blocks.find((b) => b.type === "context").elements[0].text, /add this app/);
+  assert.equal(
+    modal.blocks.find((b) => b.type === "context").elements[0].text,
+    "To create in <#C_PRIV>, add @Incy to the channel",
+  );
 });
 
 test("destinationFromView reads the chosen option, and null when there is none", () => {

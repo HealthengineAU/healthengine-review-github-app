@@ -538,7 +538,7 @@ test("/incident looks the channel up first and offers it as the default", async 
     assert.ok(lookup !== -1 && lookup < open, "expected the lookup ahead of views.open");
     const radio = fetchStub.calls[open].body.view.blocks.find((b) => b.block_id === "destination").element;
     assert.equal(radio.initial_option.value, "current");
-    assert.deepEqual(radio.options.map((o) => o.text.text).slice(0, 2), ["This channel (#bookings)", "#incidents"]);
+    assert.deepEqual(radio.options.map((o) => o.text.text).slice(0, 2), ["#bookings", "#incidents"]);
   } finally {
     fetchStub.restore();
     restore();
