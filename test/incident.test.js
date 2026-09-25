@@ -92,7 +92,7 @@ test("incidentModal defaults to the channel it was opened in", () => {
   assert.equal(radio.options[0].text.text, "#bookings");
   assert.equal(radio.options[1].text.text, "#incidents");
   assert.ok(radio.options.every((o) => o.text.type === "plain_text"), "labels must not be channel links");
-  assert.equal(radio.options[2].description.text, "e.g. incy-1024-wintery-snowfall");
+  assert.equal(radio.options[2].description.text, "Incident will be codenamed (e.g. incy-1234-wintery-snowfall)");
   assert.ok(!modal.blocks.some((b) => b.type === "context"));
   assert.deepEqual(viewOrigin(modal), origin);
   assert.equal(viewResponseUrl(modal), "https://r");
