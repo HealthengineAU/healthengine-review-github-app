@@ -72,15 +72,17 @@ function signedHeaders(raw, secret = SECRET) {
 
 // Records every Slack/Jira call the handler makes, so tests assert on effects
 // rather than on internals.
-function stubFetch({ transitions } = {}) {
+function stubFetch({ transitions, slack = {} } = {}) {
   const calls = [];
   const original = globalThis.fetch;
   const state = { transitions: transitions ?? [{ id: "11", to: { id: "11987", name: "Impact mitigated" } }, { id: "21", to: { id: "11986", name: "Resolved" } }] };
   globalThis.fetch = async (url, init = {}) => {
     calls.push({ url: String(url), body: init.body ? JSON.parse(init.body) : null });
+    const method = String(url).match(/^https:\/\/slack\.com\/api\/([^?]+)/)?.[1];
     const body = String(url).endsWith("/transitions")
       ? { transitions: state.transitions }
-      : { ok: true, ts: "111.1", key: "INCY-1", fields: {} };
+      : (typeof slack[method] === "function" ? slack[method](String(url)) : slack[method]) ??
+        { ok: true, ts: "111.1", key: "INCY-1", fields: {} };
     return { ok: true, status: 200, json: async () => body, text: async () => "" };
   };
   return {
@@ -476,6 +478,213 @@ test("a failed transition leaves the buttons in place so it can be retried", asy
     fetchStub.transitions = [{ id: "21", to: { id: "11986", name: "Resolved" } }];
     await post({ routes: h.routes, path: "/slack/incident/interact", headers: signedHeaders(raw), raw });
     assert.ok(fetchStub.calls.find((c) => c.url.endsWith("/transitions") && c.body?.transition), "retry must reach Jira");
+  } finally {
+    fetchStub.restore();
+    restore();
+  }
+});
+
+const BOOKINGS = { id: "C_BOOK", name: "bookings", postable: true };
+
+function submission({ destination, origin = null, summary = "Bookings failing" } = {}) {
+  const payload = {
+    type: "view_submission",
+    user: { id: "U9" },
+    view: {
+      callback_id: "incident_create",
+      private_metadata: JSON.stringify({ responseUrl: null, origin }),
+      state: {
+        values: {
+          summary: { value: { value: summary } },
+          ...(destination ? { destination: { value: { selected_option: { value: destination } } } } : {}),
+        },
+      },
+    },
+  };
+  return "payload=" + encodeURIComponent(JSON.stringify(payload));
+}
+
+function press(action_id, ref) {
+  const payload = {
+    type: "block_actions",
+    user: { id: "U9" },
+    container: { channel_id: ref.c, message_ts: "222.2" },
+    message: { text: `${ref.k} update`, blocks: [{ type: "section" }, { type: "actions" }] },
+    actions: [{ action_id, value: JSON.stringify(ref) }],
+  };
+  return "payload=" + encodeURIComponent(JSON.stringify(payload));
+}
+
+const ANN = { "users.info": { ok: true, user: { profile: { real_name: "Ann Example" } } } };
+
+test("/incident looks the channel up first and offers it as the default", async () => {
+  const restore = withEnv();
+  const fetchStub = stubFetch({
+    slack: {
+      "conversations.info": (url) =>
+        url.includes("C_BOOK")
+          ? { ok: true, channel: { id: "C_BOOK", name: "bookings", is_channel: true } }
+          : { ok: true, channel: { id: "C_INC", name: "incidents", is_channel: true } },
+    },
+  });
+  try {
+    const h = makeHarness();
+    register(h.app, h.options);
+    const raw = "trigger_id=T1&user_id=U9&channel_id=C_BOOK&channel_name=bookings";
+    await post({ routes: h.routes, path: "/slack/incident/command", headers: signedHeaders(raw), raw });
+
+    const lookup = fetchStub.calls.findIndex((c) => c.url.includes("conversations.info?channel=C_BOOK"));
+    const open = fetchStub.calls.findIndex((c) => c.url.endsWith("views.open"));
+    assert.ok(lookup !== -1 && lookup < open, "expected the lookup ahead of views.open");
+    const radio = fetchStub.calls[open].body.view.blocks.find((b) => b.block_id === "destination").element;
+    assert.equal(radio.initial_option.value, "current");
+    assert.deepEqual(radio.options.map((o) => o.text.text).slice(0, 2), ["This channel (#bookings)", "#incidents"]);
+  } finally {
+    fetchStub.restore();
+    restore();
+  }
+});
+
+test("/incident from a DM skips the lookup and defaults to #incidents", async () => {
+  const restore = withEnv();
+  const fetchStub = stubFetch();
+  try {
+    const h = makeHarness();
+    register(h.app, h.options);
+    const raw = "trigger_id=T1&user_id=U9&channel_id=D123&channel_name=directmessage";
+    await post({ routes: h.routes, path: "/slack/incident/command", headers: signedHeaders(raw), raw });
+
+    assert.ok(!fetchStub.calls.some((c) => c.url.includes("conversations.info?channel=D123")));
+    const open = fetchStub.calls.find((c) => c.url.endsWith("views.open"));
+    const radio = open.body.view.blocks.find((b) => b.block_id === "destination").element;
+    assert.equal(radio.initial_option.value, "incidents");
+  } finally {
+    fetchStub.restore();
+    restore();
+  }
+});
+
+test("choosing this channel triages there, and the Jira description names it", async () => {
+  const restore = withEnv();
+  const fetchStub = stubFetch({ slack: ANN });
+  try {
+    const h = makeHarness();
+    register(h.app, h.options);
+    const raw = submission({ destination: "current", origin: BOOKINGS });
+    await post({ routes: h.routes, path: "/slack/incident/interact", headers: signedHeaders(raw), raw });
+
+    const created = fetchStub.calls.find((c) => c.url.endsWith("/rest/api/3/issue"));
+    assert.equal(created.body.fields.summary, "Bookings failing");
+    assert.equal(
+      created.body.fields.description.content[0].content[0].text,
+      "Raised via Slack by Ann Example in #bookings",
+    );
+
+    const [triage, tracker] = fetchStub.calls.filter((c) => c.url.endsWith("chat.postMessage"));
+    assert.equal(triage.body.channel, "C_BOOK");
+    assert.equal(triage.body.thread_ts, undefined);
+    assert.equal(tracker.body.channel, "C_BOOK");
+    assert.equal(tracker.body.thread_ts, "111.1");
+  } finally {
+    fetchStub.restore();
+    restore();
+  }
+});
+
+test("choosing #incidents from another channel still names where it was raised", async () => {
+  const restore = withEnv();
+  const fetchStub = stubFetch({ slack: ANN });
+  try {
+    const h = makeHarness();
+    register(h.app, h.options);
+    const raw = submission({ destination: "incidents", origin: BOOKINGS });
+    await post({ routes: h.routes, path: "/slack/incident/interact", headers: signedHeaders(raw), raw });
+
+    const created = fetchStub.calls.find((c) => c.url.endsWith("/rest/api/3/issue"));
+    assert.match(created.body.fields.description.content[0].content[0].text, /in #bookings$/);
+    const triage = fetchStub.calls.find((c) => c.url.endsWith("chat.postMessage"));
+    assert.equal(triage.body.channel, "C_INC");
+  } finally {
+    fetchStub.restore();
+    restore();
+  }
+});
+
+test("a dedicated channel is private and code-named, with the summary kept inside it", async () => {
+  const restore = withEnv();
+  const fetchStub = stubFetch({
+    slack: { ...ANN, "conversations.create": { ok: true, channel: { id: "C_NEW" } } },
+  });
+  try {
+    const h = makeHarness();
+    register(h.app, h.options);
+    const raw = submission({ destination: "dedicated", origin: BOOKINGS });
+    await post({ routes: h.routes, path: "/slack/incident/interact", headers: signedHeaders(raw), raw });
+
+    const made = fetchStub.calls.find((c) => c.url.endsWith("conversations.create"));
+    assert.equal(made.body.is_private, true);
+    assert.match(made.body.name, /^incy-1-[a-z]+-[a-z]+$/);
+
+    const invite = fetchStub.calls.find((c) => c.url.endsWith("conversations.invite"));
+    assert.deepEqual(invite.body, { channel: "C_NEW", users: "U9" });
+
+    const created = fetchStub.calls.find((c) => c.url.endsWith("/rest/api/3/issue"));
+    assert.match(created.body.fields.summary, /^[a-z]+-[a-z]+$/);
+    assert.equal(made.body.name, `incy-1-${created.body.fields.summary}`);
+    assert.ok(
+      !fetchStub.calls.some((c) => c.url.endsWith("/rest/api/3/issue/INCY-1") && c.body?.fields?.summary),
+      "the code name is the summary for good",
+    );
+    assert.ok(
+      !fetchStub.calls.some((c) => c.url.includes("/rest/api/") && JSON.stringify(c.body ?? {}).includes("Bookings failing")),
+      "the summary must not reach Jira",
+    );
+
+    const inChannel = fetchStub.calls.filter((c) => c.url.endsWith("chat.postMessage") && c.body.channel === "C_NEW");
+    assert.equal(inChannel.length, 2);
+    assert.ok(inChannel.every((c) => c.body.thread_ts === undefined), "replies go to the channel, not a thread");
+    assert.equal(inChannel[0].body.text, "*INCY-1 raised* - Bookings failing");
+    const button = inChannel[1].body.blocks.find((b) => b.type === "actions").elements[0];
+    assert.equal(JSON.parse(button.value).d, 1);
+  } finally {
+    fetchStub.restore();
+    restore();
+  }
+});
+
+test("in a dedicated channel, resolving posts once, to the channel", async () => {
+  const restore = withEnv();
+  const fetchStub = stubFetch();
+  try {
+    const h = makeHarness();
+    register(h.app, h.options);
+    const raw = press("incident_resolved", { k: "INCY-1", c: "C_NEW", t: "111.1", r: "U9", d: 1 });
+    await post({ routes: h.routes, path: "/slack/incident/interact", headers: signedHeaders(raw), raw });
+
+    const posts = fetchStub.calls.filter((c) => c.url.endsWith("chat.postMessage"));
+    assert.equal(posts.length, 1);
+    assert.equal(posts[0].body.channel, "C_NEW");
+    assert.equal(posts[0].body.thread_ts, undefined);
+    const next = posts[0].body.blocks.find((b) => b.type === "actions").elements[0];
+    assert.equal(JSON.parse(next.value).d, 1, "the next buttons keep the channel mode");
+  } finally {
+    fetchStub.restore();
+    restore();
+  }
+});
+
+test("in a dedicated channel, the report request goes to the channel", async () => {
+  const restore = withEnv();
+  const fetchStub = stubFetch();
+  try {
+    const h = makeHarness();
+    register(h.app, h.options);
+    const raw = press("incident_draft_report", { k: "INCY-1", c: "C_NEW", t: "111.1", r: "U9", d: 1 });
+    await post({ routes: h.routes, path: "/slack/incident/interact", headers: signedHeaders(raw), raw });
+
+    const prompt = fetchStub.calls.find((c) => c.url.endsWith("chat.postMessage") && c.body.channel === "C_NEW");
+    assert.equal(prompt.body.thread_ts, undefined);
+    assert.match(prompt.body.text, /^<@U_DUSTY> .*See channel for details/);
   } finally {
     fetchStub.restore();
     restore();

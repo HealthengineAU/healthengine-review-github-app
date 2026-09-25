@@ -64,7 +64,12 @@
 
 - Starts incidents from Slack (`/incident`, see below):
   - One short form raises an `INCY` Incident, posts a triage thread in the
-    incidents channel, reacts, pins it, and links the thread back onto the issue
+    current channel (default) or the incidents channel, reacts, pins it, and
+    links the thread back onto the issue
+  - Or it opens a code-named private channel: the Jira summary is the code name
+    (`wintery-snowfall`) and the channel adds the key (`incy-1024-wintery-snowfall`).
+    The summary is posted only inside it, and updates go to the channel rather
+    than a thread
   - *Mitigated* / *Resolved* buttons rename the issue with the prefix Jira
     automations key off, unpin the thread, and swap the reaction
   - A *Draft incident report* button tags Dusty in the thread, which is what
@@ -95,6 +100,9 @@ Notes:
 - **Severity and Incident start are never asked for.** The Jira fields default to
   SEV-4 and to creation time, and a severity question up front is exactly the
   hesitation the command exists to remove. Severity is set later, in Jira.
+- **This channel** is offered only where the app can post: a public channel, or
+  a private one it has been added to. Private incident channels need
+  `groups:write`; the lookup needs `channels:read` and `groups:read`.
 - **Reporter** is mapped from the Slack user's email to an Atlassian `accountId`.
   Jira hides emails under some privacy settings; when the lookup misses, the
   service account stays the reporter rather than the incident failing.

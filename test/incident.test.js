@@ -2,10 +2,12 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 
 import { classifyMention } from "../lib/dusty-slack-proxy.js";
+import { codeName } from "../lib/incident/codename.js";
 import { LABEL, STATUS } from "../lib/incident/constants.js";
 import {
   createdBlocks,
   decodeRef,
+  destinationFromView,
   unescapeSlackText,
   prefillSummary,
   draftReportPrompt,
@@ -17,6 +19,8 @@ import {
   thanksBlocks,
   threadBlocks,
   triageText,
+  viewOrigin,
+  viewResponseUrl,
 } from "../lib/incident/blocks.js";
 import {
   browseUrl,
@@ -40,8 +44,15 @@ test("browseUrl tolerates a trailing slash on the base url", () => {
 });
 
 test("encodeRef/decodeRef round-trip the coordinates a button acts on", () => {
-  const ref = { key: "INCY-1", channel: "C1", thread: "111.1", reporter: "U9" };
-  assert.deepEqual(decodeRef(encodeRef(ref)), ref);
+  for (const dedicated of [false, true]) {
+    const ref = { key: "INCY-1", channel: "C1", thread: "111.1", reporter: "U9", dedicated };
+    assert.deepEqual(decodeRef(encodeRef(ref)), ref);
+  }
+});
+
+test("decodeRef reads a ref from before dedicated channels as a thread", () => {
+  const ref = decodeRef(JSON.stringify({ k: "INCY-1", c: "C1", t: "111.1", r: "U9" }));
+  assert.equal(ref.dedicated, false);
 });
 
 test("decodeRef rejects junk and incomplete refs rather than throwing", () => {
@@ -59,16 +70,90 @@ test("summaryFromView returns empty string when the field is missing", () => {
   assert.equal(summaryFromView({}), "");
 });
 
-test("incidentModal asks exactly one question", () => {
-  const modal = incidentModal();
+const INCIDENTS = { id: "C_INC", name: "incidents", postable: true };
+
+test("incidentModal asks what's going on and where to run it", () => {
+  const modal = incidentModal({ incidents: INCIDENTS });
   assert.equal(modal.callback_id, "incident_create");
-  assert.equal(modal.blocks.filter((b) => b.type === "input").length, 1);
+  assert.deepEqual(
+    modal.blocks.filter((b) => b.type === "input").map((b) => b.block_id),
+    ["summary", "destination"],
+  );
+});
+
+const destinations = (modal) => modal.blocks.find((b) => b.block_id === "destination").element;
+
+test("incidentModal defaults to the channel it was opened in", () => {
+  const origin = { id: "C_BOOK", name: "bookings", postable: true };
+  const modal = incidentModal({ origin, incidents: INCIDENTS, responseUrl: "https://r" });
+  const radio = destinations(modal);
+  assert.deepEqual(radio.options.map((o) => o.value), ["current", "incidents", "dedicated"]);
+  assert.equal(radio.initial_option.value, "current");
+  assert.equal(radio.options[0].text.text, "This channel (#bookings)");
+  assert.equal(radio.options[1].text.text, "#incidents");
+  assert.ok(radio.options.every((o) => o.text.type === "plain_text"), "labels must not be channel links");
+  assert.match(radio.options[2].description.text, /incy-1024-wintery-snowfall/);
+  assert.ok(!modal.blocks.some((b) => b.type === "context"));
+  assert.deepEqual(viewOrigin(modal), origin);
+  assert.equal(viewResponseUrl(modal), "https://r");
+});
+
+test("incidentModal defaults to #incidents from a DM, or from #incidents itself", () => {
+  for (const origin of [null, { id: "C_INC", name: "incidents", postable: true }]) {
+    const radio = destinations(incidentModal({ origin, incidents: INCIDENTS }));
+    assert.deepEqual(radio.options.map((o) => o.value), ["incidents", "dedicated"]);
+    assert.equal(radio.initial_option.value, "incidents");
+  }
+  const unnamed = destinations(incidentModal({ incidents: { id: "C_INC", name: null, postable: false } }));
+  assert.equal(unnamed.options[0].text.text, "#incidents");
+});
+
+test("incidentModal explains a channel it cannot post in instead of offering it", () => {
+  const modal = incidentModal({ origin: { id: "C_PRIV", name: null, postable: false }, incidents: INCIDENTS });
+  assert.deepEqual(destinations(modal).options.map((o) => o.value), ["incidents", "dedicated"]);
+  assert.match(modal.blocks.find((b) => b.type === "context").elements[0].text, /add this app/);
+});
+
+test("destinationFromView reads the chosen option, and null when there is none", () => {
+  const view = { state: { values: { destination: { value: { selected_option: { value: "dedicated" } } } } } };
+  assert.equal(destinationFromView(view), "dedicated");
+  assert.equal(destinationFromView({}), null);
+  assert.equal(viewOrigin({}), null);
+});
+
+test("codeName is an adjective and a noun, safe for a channel name", () => {
+  assert.equal(codeName(() => 0), "amber-aurora");
+  for (let i = 0; i < 50; i++) assert.match(codeName(), /^[a-z]+-[a-z]+$/);
 });
 
 test("triageText names the incident without linking it", () => {
   const text = triageText({ key: "INCY-1", summary: "Bookings failing" });
   assert.equal(text, "*INCY-1 raised* - Bookings failing — Reply in thread :thread:");
   assert.ok(!text.includes("http"));
+});
+
+test("triageText in a dedicated channel does not point at a thread", () => {
+  assert.equal(
+    triageText({ key: "INCY-1", summary: "Bookings failing", dedicated: true }),
+    "*INCY-1 raised* - Bookings failing",
+  );
+});
+
+test("a dedicated channel's replies say channel, not thread", () => {
+  const ref = encodeRef({ key: "INCY-1", channel: "C1", thread: "1.1", reporter: "U9", dedicated: true });
+  const tracker = threadBlocks({ key: "INCY-1", url: "https://j", reporter: "U9", ref, dedicated: true });
+  assert.match(tracker[0].text.text, /in this channel\./);
+
+  const created = createdBlocks({ key: "INCY-1", channel: "C1", threadUrl: "https://s", dedicated: true });
+  assert.equal(created.at(-1).elements.at(-1).text.text, "View INCY-1 channel");
+
+  const thanks = thanksBlocks({ key: "INCY-1", threadUrl: "u", issueUrl: "i", reportUrl: null, dedicated: true });
+  assert.equal(thanks.at(-1).elements[0].text.text, "View channel");
+
+  assert.match(
+    draftReportPrompt({ dustyUserId: "U_DUSTY", key: "INCY-1", requester: "U9", dedicated: true }),
+    /See channel for details/,
+  );
 });
 
 // Resolving is the step after mitigating, not an alternative to it, so the
@@ -198,6 +283,13 @@ test("incidentDescription is one unadorned sentence", () => {
   assert.equal(doc.content.length, 1);
   assert.deepEqual(doc.content[0].content, [
     { type: "text", text: "Raised via Slack by Ann Example" },
+  ]);
+});
+
+test("incidentDescription names the channel it was raised in", () => {
+  const doc = incidentDescription({ who: "Ann Example", channel: "bookings" });
+  assert.deepEqual(doc.content[0].content, [
+    { type: "text", text: "Raised via Slack by Ann Example in #bookings" },
   ]);
 });
 
