@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 
 import { classifyMention } from "../lib/dusty-slack-proxy.js";
-import { codeName } from "../lib/incident/codename.js";
+import { codeName, incidentName } from "../lib/incident/codename.js";
 import { LABEL, STATUS } from "../lib/incident/constants.js";
 import {
   createdBlocks,
@@ -127,6 +127,10 @@ test("destinationFromView reads the chosen option, and null when there is none",
 test("codeName is an adjective and a noun, safe for a channel name", () => {
   assert.equal(codeName(() => 0), "amber-aurora");
   for (let i = 0; i < 50; i++) assert.match(codeName(), /^[a-z]+-[a-z]+$/);
+});
+
+test("incidentName title-cases the code name for the Jira summary", () => {
+  assert.equal(incidentName("hidden-coral"), "Hidden Coral Incident");
 });
 
 test("triageText names the incident without linking it", () => {

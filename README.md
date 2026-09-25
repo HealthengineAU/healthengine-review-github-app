@@ -67,7 +67,7 @@
     current channel (default) or the incidents channel, reacts, pins it, and
     links the thread back onto the issue
   - Or it opens a code-named private channel: the Jira summary is the code name
-    (`wintery-snowfall`) and the channel adds the key (`incy-1234-wintery-snowfall`).
+    (`Wintery Snowfall Incident`) and the channel adds the key (`incy-1234-wintery-snowfall`).
     The summary is posted only inside it, and updates go to the channel rather
     than a thread
   - *Mitigated* / *Resolved* buttons rename the issue with the prefix Jira

@@ -629,8 +629,9 @@ test("a dedicated channel is private and code-named, with the summary kept insid
     assert.deepEqual(invite.body, { channel: "C_NEW", users: "U9" });
 
     const created = fetchStub.calls.find((c) => c.url.endsWith("/rest/api/3/issue"));
-    assert.match(created.body.fields.summary, /^[a-z]+-[a-z]+$/);
-    assert.equal(made.body.name, `incy-1-${created.body.fields.summary}`);
+    assert.match(created.body.fields.summary, /^[A-Z][a-z]+ [A-Z][a-z]+ Incident$/);
+    const slug = created.body.fields.summary.replace(/ Incident$/, "").toLowerCase().replace(" ", "-");
+    assert.equal(made.body.name, `incy-1-${slug}`);
     assert.ok(
       !fetchStub.calls.some((c) => c.url.endsWith("/rest/api/3/issue/INCY-1") && c.body?.fields?.summary),
       "the code name is the summary for good",
