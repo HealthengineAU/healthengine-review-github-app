@@ -92,7 +92,7 @@ test("incidentModal defaults to the channel it was opened in", () => {
   assert.equal(radio.options[0].text.text, "#bookings");
   assert.equal(radio.options[1].text.text, "#incidents");
   assert.ok(radio.options.every((o) => o.text.type === "plain_text"), "labels must not be channel links");
-  assert.equal(radio.options[2].description.text, "Incident will be codenamed (e.g. incy-1234-wintery-snowfall)");
+  assert.equal(radio.options[2].description.text, "Incident will be raised with a code name");
   assert.ok(!modal.blocks.some((b) => b.type === "context"));
   assert.deepEqual(viewOrigin(modal), origin);
   assert.equal(viewResponseUrl(modal), "https://r");
@@ -113,7 +113,7 @@ test("incidentModal explains a channel it cannot post in instead of offering it"
   assert.deepEqual(destinations(modal).options.map((o) => o.value), ["incidents", "dedicated"]);
   assert.equal(
     modal.blocks.find((b) => b.type === "context").elements[0].text,
-    "To create in <#C_PRIV>, add @Incy to the channel",
+    "Add @Incy to <#C_PRIV> to raise here",
   );
 });
 
