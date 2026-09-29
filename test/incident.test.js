@@ -72,49 +72,58 @@ test("summaryFromView returns empty string when the field is missing", () => {
 
 const INCIDENTS = { id: "C_INC", name: "incidents", postable: true };
 
-test("incidentModal asks what's going on and where to run it", () => {
+test("incidentModal asks for privacy, then a summary", () => {
   const modal = incidentModal({ incidents: INCIDENTS });
   assert.equal(modal.callback_id, "incident_create");
+  assert.equal(modal.title.text, "Incident");
+  assert.equal(modal.submit.text, "Raise");
   assert.deepEqual(
     modal.blocks.filter((b) => b.type === "input").map((b) => b.block_id),
-    ["summary", "destination"],
+    ["destination", "summary"],
   );
 });
 
-const destinations = (modal) => modal.blocks.find((b) => b.block_id === "destination").element;
+const privacy = (modal) => modal.blocks.find((b) => b.block_id === "destination").element;
+const summaryInput = (modal) => modal.blocks.find((b) => b.block_id === "summary").element;
 
-test("incidentModal defaults to the channel it was opened in", () => {
+test("incidentModal offers Open in the channel it was opened in, or Closed", () => {
   const origin = { id: "C_BOOK", name: "bookings", postable: true };
   const modal = incidentModal({ origin, incidents: INCIDENTS, responseUrl: "https://r" });
-  const radio = destinations(modal);
-  assert.deepEqual(radio.options.map((o) => o.value), ["current", "incidents", "dedicated"]);
-  assert.equal(radio.initial_option.value, "current");
-  assert.equal(radio.options[0].text.text, "#bookings");
-  assert.equal(radio.options[1].text.text, "#incidents");
-  assert.ok(radio.options.every((o) => o.text.type === "plain_text"), "labels must not be channel links");
-  assert.equal(radio.options[2].description.text, "Incident is raised with a secret name");
-  assert.ok(!modal.blocks.some((b) => b.type === "context"));
+  const radio = privacy(modal);
+  assert.deepEqual(radio.options.map((o) => o.value), ["open", "dedicated"]);
+  assert.deepEqual(radio.options.map((o) => o.text.text), [
+    "*Open* — #bookings",
+    "*Closed* — Private channel & secret name",
+  ]);
+  assert.ok(radio.options.every((o) => o.text.verbatim === true), "a linkified channel name navigates instead of selecting");
+  assert.deepEqual(radio.initial_option, radio.options[0]);
+  assert.ok(!modal.blocks.some((b) => b.type === "alert"));
   assert.deepEqual(viewOrigin(modal), origin);
   assert.equal(viewResponseUrl(modal), "https://r");
 });
 
-test("incidentModal defaults to #incidents from a DM, or from #incidents itself", () => {
+test("incidentModal opens in #incidents from a DM, or from #incidents itself", () => {
   for (const origin of [null, { id: "C_INC", name: "incidents", postable: true }]) {
-    const radio = destinations(incidentModal({ origin, incidents: INCIDENTS }));
-    assert.deepEqual(radio.options.map((o) => o.value), ["incidents", "dedicated"]);
-    assert.equal(radio.initial_option.value, "incidents");
+    const modal = incidentModal({ origin, incidents: INCIDENTS });
+    assert.equal(privacy(modal).options[0].text.text, "*Open* — #incidents");
+    assert.ok(!modal.blocks.some((b) => b.type === "alert"));
   }
-  const unnamed = destinations(incidentModal({ incidents: { id: "C_INC", name: null, postable: false } }));
-  assert.equal(unnamed.options[0].text.text, "#incidents");
+  const unnamed = privacy(incidentModal({ incidents: { id: "C_INC", name: null, postable: false } }));
+  assert.equal(unnamed.options[0].text.text, "*Open* — #incidents");
 });
 
-test("incidentModal explains a channel it cannot post in instead of offering it", () => {
+test("incidentModal falls back to #incidents, and says how to raise here, where Incy cannot post", () => {
   const modal = incidentModal({ origin: { id: "C_PRIV", name: null, postable: false }, incidents: INCIDENTS });
-  assert.deepEqual(destinations(modal).options.map((o) => o.value), ["incidents", "dedicated"]);
-  assert.equal(
-    modal.blocks.find((b) => b.type === "context").elements[0].text,
-    "Add @Incy to <#C_PRIV> to raise here",
-  );
+  assert.equal(privacy(modal).options[0].text.text, "*Open* — #incidents");
+  const alert = modal.blocks[0];
+  assert.equal(alert.type, "alert");
+  assert.equal(alert.level, "info");
+  assert.equal(alert.text.text, "*Raise here?* Invite @Incy to <#C_PRIV>");
+});
+
+test("incidentModal asks who or what is affected", () => {
+  const input = summaryInput(incidentModal({ incidents: INCIDENTS }));
+  assert.equal(input.placeholder.text, "Describe who/what is affected (5-10 words)");
 });
 
 test("destinationFromView reads the chosen option, and null when there is none", () => {
@@ -355,14 +364,13 @@ test("prefillSummary returns empty for nothing typed", () => {
 // Slack refuses to open a view whose initial_value is longer than max_length.
 test("prefillSummary truncates to the field's own limit", () => {
   const long = "x".repeat(200);
-  const modal = incidentModal({ text: long });
-  const input = modal.blocks[0].element;
+  const input = summaryInput(incidentModal({ text: long }));
   assert.equal(input.initial_value.length, input.max_length);
 });
 
 test("incidentModal leaves initial_value off when nothing was typed", () => {
-  assert.equal(incidentModal({}).blocks[0].element.initial_value, undefined);
-  assert.equal(incidentModal({ text: "boom" }).blocks[0].element.initial_value, "Boom");
+  assert.equal(summaryInput(incidentModal({})).initial_value, undefined);
+  assert.equal(summaryInput(incidentModal({ text: "boom" })).initial_value, "Boom");
 });
 
 test("unescapeSlackText unwraps channels, users and group mentions", () => {

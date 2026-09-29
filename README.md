@@ -63,10 +63,10 @@
     which it watches itself — goes straight to 👍. It means "received", not "done"
 
 - Starts incidents from Slack (`/incident`, see below):
-  - One short form raises an `INCY` Incident, posts a triage thread in the
-    current channel (default) or the incidents channel, reacts, pins it, and
-    links the thread back onto the issue
-  - Or it opens a code-named private channel: the Jira summary is the code name
+  - One short form raises an `INCY` Incident. *Open* posts a triage thread in
+    the current channel (or the incidents channel, where the app can't post),
+    reacts, pins it, and links the thread back onto the issue
+  - *Closed* opens a code-named private channel instead: the Jira summary is the code name
     (`Wintery Snowfall Incident`) and the channel adds the key (`incy-1234-wintery-snowfall`).
     The issue is labelled `private`, the summary is posted only inside the
     channel, and updates go to the channel rather than a thread
@@ -101,8 +101,8 @@ Notes:
 - **Severity and Incident start are never asked for.** The Jira fields default to
   SEV-4 and to creation time, and a severity question up front is exactly the
   hesitation the command exists to remove. Severity is set later, in Jira.
-- **This channel** is offered only where the app can post: a public channel, or
-  a private one it has been added to. Private incident channels need
+- **Open** uses the current channel only where the app can post: a public
+  channel, or a private one it has been added to. Private incident channels need
   `groups:write`; the lookup needs `channels:read` and `groups:read`. Inviting
   Dusty into a public channel needs `channels:manage`.
 - **Reporter** is mapped from the Slack user's email to an Atlassian `accountId`.

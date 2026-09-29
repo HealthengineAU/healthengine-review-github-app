@@ -517,7 +517,7 @@ function press(action_id, ref) {
 
 const ANN = { "users.info": { ok: true, user: { profile: { real_name: "Ann Example" } } } };
 
-test("/incident looks the channel up first and offers it as the default", async () => {
+test("/incident looks the channel up first and offers Open there", async () => {
   const restore = withEnv();
   const fetchStub = stubFetch({
     slack: {
@@ -537,15 +537,15 @@ test("/incident looks the channel up first and offers it as the default", async 
     const open = fetchStub.calls.findIndex((c) => c.url.endsWith("views.open"));
     assert.ok(lookup !== -1 && lookup < open, "expected the lookup ahead of views.open");
     const radio = fetchStub.calls[open].body.view.blocks.find((b) => b.block_id === "destination").element;
-    assert.equal(radio.initial_option.value, "current");
-    assert.deepEqual(radio.options.map((o) => o.text.text).slice(0, 2), ["#bookings", "#incidents"]);
+    assert.deepEqual(radio.options.map((o) => o.value), ["open", "dedicated"]);
+    assert.equal(radio.options[0].text.text, "*Open* — #bookings");
   } finally {
     fetchStub.restore();
     restore();
   }
 });
 
-test("/incident from a DM skips the lookup and defaults to #incidents", async () => {
+test("/incident from a DM skips the lookup and opens in #incidents", async () => {
   const restore = withEnv();
   const fetchStub = stubFetch();
   try {
@@ -557,20 +557,20 @@ test("/incident from a DM skips the lookup and defaults to #incidents", async ()
     assert.ok(!fetchStub.calls.some((c) => c.url.includes("conversations.info?channel=D123")));
     const open = fetchStub.calls.find((c) => c.url.endsWith("views.open"));
     const radio = open.body.view.blocks.find((b) => b.block_id === "destination").element;
-    assert.equal(radio.initial_option.value, "incidents");
+    assert.equal(radio.options[0].text.text, "*Open* — #incidents");
   } finally {
     fetchStub.restore();
     restore();
   }
 });
 
-test("choosing this channel triages there, and the Jira description names it", async () => {
+test("Open triages in this channel, and the Jira description names it", async () => {
   const restore = withEnv();
   const fetchStub = stubFetch({ slack: ANN });
   try {
     const h = makeHarness();
     register(h.app, h.options);
-    const raw = submission({ destination: "current", origin: BOOKINGS });
+    const raw = submission({ destination: "open", origin: BOOKINGS });
     await post({ routes: h.routes, path: "/slack/incident/interact", headers: signedHeaders(raw), raw });
 
     const created = fetchStub.calls.find((c) => c.url.endsWith("/rest/api/3/issue"));
@@ -592,17 +592,17 @@ test("choosing this channel triages there, and the Jira description names it", a
   }
 });
 
-test("choosing #incidents from another channel still names where it was raised", async () => {
+test("Open falls back to #incidents where Incy cannot post", async () => {
   const restore = withEnv();
   const fetchStub = stubFetch({ slack: ANN });
   try {
     const h = makeHarness();
     register(h.app, h.options);
-    const raw = submission({ destination: "incidents", origin: BOOKINGS });
+    const raw = submission({ destination: "open", origin: { id: "C_PRIV", name: null, postable: false } });
     await post({ routes: h.routes, path: "/slack/incident/interact", headers: signedHeaders(raw), raw });
 
     const created = fetchStub.calls.find((c) => c.url.endsWith("/rest/api/3/issue"));
-    assert.match(created.body.fields.description.content[0].content[0].text, /in #bookings$/);
+    assert.equal(created.body.fields.description.content[0].content[0].text, "Raised via Slack by Ann Example");
     const triage = fetchStub.calls.find((c) => c.url.endsWith("chat.postMessage"));
     assert.equal(triage.body.channel, "C_INC");
   } finally {
