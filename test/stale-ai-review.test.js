@@ -78,7 +78,7 @@ test("latestAiReview: the most recent bot review, ignoring humans", () => {
 // measureStaleReview
 // ---------------------------------------------------------------------------
 
-const staleReview = { enabled: true, percent: 5, minLines: 2, ignorePaths: [] };
+const staleDetection = { enabled: true, percent: 5, minLines: 2, ignorePaths: [] };
 const copilotReview = (commit_id) => ({
   user: { login: "copilot-pull-request-reviewer[bot]", type: "Bot" },
   submitted_at: "2026-07-01T00:00:00Z",
@@ -102,7 +102,7 @@ const compareCalls = (octokit) =>
 test("measureStaleReview: nothing to measure when the review is on the head commit", async () => {
   const octokit = compareOctokit([], []);
   const result = await measureStaleReview(octokit, {
-    owner: "acme", repo: "r1", pr: makePr(), reviews: [copilotReview("head")], staleReview,
+    owner: "acme", repo: "r1", pr: makePr(), reviews: [copilotReview("head")], staleDetection,
   });
   assert.equal(result, null);
   assert.equal(compareCalls(octokit).length, 0);
@@ -115,12 +115,12 @@ test("measureStaleReview: stale once lines added exceed max(min_lines, percent%)
   const beyond = [file("a.js", [...lines(100, "a"), ...lines(6, "b")])];
 
   const fresh = await measureStaleReview(compareOctokit(before, within), {
-    owner: "acme", repo: "r2", pr: makePr(), reviews: [copilotReview("reviewed")], staleReview,
+    owner: "acme", repo: "r2", pr: makePr(), reviews: [copilotReview("reviewed")], staleDetection,
   });
-  assert.deepEqual(fresh, { reviewer: "copilot-pull-request-reviewer[bot]", linesAdded: 5, limit: 5, stale: false });
+  assert.deepEqual(fresh, { linesAdded: 5, limit: 5, stale: false });
 
   const stale = await measureStaleReview(compareOctokit(before, beyond), {
-    owner: "acme", repo: "r2b", pr: makePr(), reviews: [copilotReview("reviewed")], staleReview,
+    owner: "acme", repo: "r2b", pr: makePr(), reviews: [copilotReview("reviewed")], staleDetection,
   });
   assert.equal(stale.limit, 5);
   assert.equal(stale.stale, true);
@@ -130,7 +130,7 @@ test("measureStaleReview: min_lines floors the limit on small PRs", async () => 
   const before = [file("a.js", ["one"])];
   const after = [file("a.js", ["one", "two", "three"])];
   const result = await measureStaleReview(compareOctokit(before, after), {
-    owner: "acme", repo: "r3", pr: makePr(), reviews: [copilotReview("reviewed")], staleReview,
+    owner: "acme", repo: "r3", pr: makePr(), reviews: [copilotReview("reviewed")], staleDetection,
   });
   assert.equal(result.limit, 2);
   assert.equal(result.stale, false);
@@ -139,7 +139,7 @@ test("measureStaleReview: min_lines floors the limit on small PRs", async () => 
 test("measureStaleReview: results are cached per reviewed and head commit", async () => {
   const octokit = compareOctokit([], [file("a.js", ["one"])]);
   const pr = makePr();
-  const args = { owner: "acme", repo: "r4", pr, reviews: [copilotReview("reviewed")], staleReview };
+  const args = { owner: "acme", repo: "r4", pr, reviews: [copilotReview("reviewed")], staleDetection };
   await measureStaleReview(octokit, args);
   await measureStaleReview(octokit, args);
   assert.equal(compareCalls(octokit).length, 2);
@@ -154,7 +154,7 @@ test("measureStaleReview: a failed compare measures nothing", async () => {
     "rest.repos.compareCommitsWithBasehead": () => { throw new Error("Not Found"); },
   });
   const result = await measureStaleReview(octokit, {
-    owner: "acme", repo: "r5", pr: makePr(), reviews: [copilotReview("reviewed")], staleReview,
+    owner: "acme", repo: "r5", pr: makePr(), reviews: [copilotReview("reviewed")], staleDetection,
   });
   assert.equal(result, null);
 });

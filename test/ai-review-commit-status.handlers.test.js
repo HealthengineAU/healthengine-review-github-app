@@ -10,7 +10,7 @@ import { makeApp, makeOctokit, makeContext } from "./helpers/mock-github.js";
 async function flushDebounce(t) {
   t.mock.timers.tick(1000);
   // Let the async updateAIReviewStatus() chain resolve.
-  for (let i = 0; i < 20; i++) await Promise.resolve();
+  for (let i = 0; i < 50; i++) await Promise.resolve();
 }
 
 function statusCalls(octokit) {
@@ -911,7 +911,7 @@ test("an edited bot review updates the status (Copilot never emits submitted)", 
 });
 
 // ---------------------------------------------------------------------------
-// stale_review
+// stale_detection
 // ---------------------------------------------------------------------------
 
 const copilotBot = { login: "copilot-pull-request-reviewer[bot]", type: "Bot", id: 175728472 };
@@ -936,7 +936,7 @@ function makeStaleOctokit({ addedSinceReview }) {
   });
 }
 
-function makeStaleContext(octokit, { config = { ai_review: { stale_review: { enabled: true } } }, ...prOverrides } = {}) {
+function makeStaleContext(octokit, { config = { ai_review: { stale_detection: { enabled: true } } }, ...prOverrides } = {}) {
   return makeContext({
     octokit,
     config,
@@ -959,7 +959,7 @@ test("a PR that outgrew its last AI review is held at pending", async (t) => {
   t.mock.timers.enable({ apis: ["setTimeout"] });
   const { app, dispatch } = makeApp();
   register(app);
-  const octokit = makeStaleOctokit({ addedSinceReview: 10 });
+  const octokit = makeStaleOctokit({ addedSinceReview: 20 });
 
   await dispatch("pull_request.synchronize", makeStaleContext(octokit));
   await flushDebounce(t);
@@ -967,10 +967,10 @@ test("a PR that outgrew its last AI review is held at pending", async (t) => {
   const statuses = statusCalls(octokit);
   assert.equal(statuses.length, 1);
   assert.equal(statuses[0].args.state, "pending");
-  assert.match(statuses[0].args.description, /^10 lines added since Copilot reviewed \(limit 5\)/);
+  assert.equal(statuses[0].args.description, "Review again - Substantial changes since last review");
 });
 
-test("a follow-up within the stale_review limit keeps the review green", async (t) => {
+test("a follow-up within the stale_detection limit keeps the review green", async (t) => {
   t.mock.timers.enable({ apis: ["setTimeout"] });
   const { app, dispatch } = makeApp();
   register(app);
@@ -985,7 +985,7 @@ test("a follow-up within the stale_review limit keeps the review green", async (
   assert.match(statuses[0].args.description, /Reviewed by Copilot/);
 });
 
-test("a requested re-review satisfies stale_review without measuring", async (t) => {
+test("a requested re-review satisfies stale_detection without measuring", async (t) => {
   t.mock.timers.enable({ apis: ["setTimeout"] });
   const { app, dispatch } = makeApp();
   register(app);
@@ -1002,7 +1002,7 @@ test("a requested re-review satisfies stale_review without measuring", async (t)
   assert.equal(compareCalls(octokit).length, 0);
 });
 
-test("stale_review is off unless enabled", async (t) => {
+test("stale_detection is off unless enabled", async (t) => {
   t.mock.timers.enable({ apis: ["setTimeout"] });
   const { app, dispatch } = makeApp();
   register(app);
@@ -1015,4 +1015,82 @@ test("stale_review is off unless enabled", async (t) => {
   assert.equal(statuses.length, 1);
   assert.equal(statuses[0].args.state, "success");
   assert.equal(compareCalls(octokit).length, 0);
+});
+
+const AUTO_STALE_CONFIG = {
+  providers: ["copilot"],
+  ai_review: { automatic: true, stale_detection: { enabled: true } },
+};
+
+const copilotInvites = (octokit) =>
+  octokit.calls.filter((c) => c.method === "rest.pulls.requestReviewers");
+
+test("a stale review invites a re-review where automatic invites apply", async (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  const { app, dispatch } = makeApp();
+  register(app);
+  const octokit = makeStaleOctokit({ addedSinceReview: 20 });
+  const context = makeStaleContext(octokit, { config: AUTO_STALE_CONFIG });
+
+  await dispatch("pull_request.synchronize", context);
+  await flushDebounce(t);
+  await dispatch("pull_request.synchronize", context);
+  await flushDebounce(t);
+
+  assert.equal(copilotInvites(octokit).length, 1);
+  assert.deepEqual(copilotInvites(octokit)[0].args.reviewers, [copilotBot.login]);
+});
+
+test("a stale draft is re-invited once it's marked ready for review", async (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  const { app, dispatch } = makeApp();
+  register(app);
+  const octokit = makeStaleOctokit({ addedSinceReview: 20 });
+
+  await dispatch("pull_request.synchronize", makeStaleContext(octokit, {
+    config: AUTO_STALE_CONFIG,
+    draft: true,
+  }));
+  await flushDebounce(t);
+  assert.equal(copilotInvites(octokit).length, 0);
+
+  await dispatch("pull_request.ready_for_review", makeStaleContext(octokit, {
+    config: AUTO_STALE_CONFIG,
+    draft: false,
+  }));
+  await flushDebounce(t);
+  assert.equal(copilotInvites(octokit).length, 1);
+});
+
+test("auto_invite: false only holds the status", async (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  const { app, dispatch } = makeApp();
+  register(app);
+  const octokit = makeStaleOctokit({ addedSinceReview: 20 });
+
+  await dispatch("pull_request.synchronize", makeStaleContext(octokit, {
+    config: {
+      providers: ["copilot"],
+      ai_review: { automatic: true, stale_detection: { enabled: true, auto_invite: false } },
+    },
+  }));
+  await flushDebounce(t);
+
+  assert.equal(statusCalls(octokit)[0].args.state, "pending");
+  assert.equal(copilotInvites(octokit).length, 0);
+});
+
+test("no re-invite where automatic invites are off", async (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  const { app, dispatch } = makeApp();
+  register(app);
+  const octokit = makeStaleOctokit({ addedSinceReview: 20 });
+
+  await dispatch("pull_request.synchronize", makeStaleContext(octokit, {
+    config: { providers: ["copilot"], ai_review: { stale_detection: { enabled: true } } },
+  }));
+  await flushDebounce(t);
+
+  assert.equal(statusCalls(octokit)[0].args.state, "pending");
+  assert.equal(copilotInvites(octokit).length, 0);
 });
