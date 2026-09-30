@@ -936,7 +936,7 @@ function makeStaleOctokit({ addedSinceReview }) {
   });
 }
 
-function makeStaleContext(octokit, { config = { ai_review: { stale_detection: { enabled: true } } }, ...prOverrides } = {}) {
+function makeStaleContext(octokit, { config = {}, ...prOverrides } = {}) {
   return makeContext({
     octokit,
     config,
@@ -1002,13 +1002,15 @@ test("a requested re-review satisfies stale_detection without measuring", async 
   assert.equal(compareCalls(octokit).length, 0);
 });
 
-test("stale_detection is off unless enabled", async (t) => {
+test("stale_detection enabled: false turns it off", async (t) => {
   t.mock.timers.enable({ apis: ["setTimeout"] });
   const { app, dispatch } = makeApp();
   register(app);
   const octokit = makeStaleOctokit({ addedSinceReview: 50 });
 
-  await dispatch("pull_request.synchronize", makeStaleContext(octokit, { config: {} }));
+  await dispatch("pull_request.synchronize", makeStaleContext(octokit, {
+    config: { ai_review: { stale_detection: { enabled: false } } },
+  }));
   await flushDebounce(t);
 
   const statuses = statusCalls(octokit);
@@ -1019,7 +1021,7 @@ test("stale_detection is off unless enabled", async (t) => {
 
 const AUTO_STALE_CONFIG = {
   providers: ["copilot"],
-  ai_review: { automatic: true, stale_detection: { enabled: true } },
+  ai_review: { automatic: true },
 };
 
 const copilotInvites = (octokit) =>
@@ -1071,7 +1073,7 @@ test("auto_invite: false only holds the status", async (t) => {
   await dispatch("pull_request.synchronize", makeStaleContext(octokit, {
     config: {
       providers: ["copilot"],
-      ai_review: { automatic: true, stale_detection: { enabled: true, auto_invite: false } },
+      ai_review: { automatic: true, stale_detection: { auto_invite: false } },
     },
   }));
   await flushDebounce(t);
@@ -1087,7 +1089,7 @@ test("no re-invite where automatic invites are off", async (t) => {
   const octokit = makeStaleOctokit({ addedSinceReview: 20 });
 
   await dispatch("pull_request.synchronize", makeStaleContext(octokit, {
-    config: { providers: ["copilot"], ai_review: { stale_detection: { enabled: true } } },
+    config: { providers: ["copilot"] },
   }));
   await flushDebounce(t);
 

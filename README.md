@@ -22,7 +22,7 @@
     (under `ai_review.min_diff_size` changed lines, default 10)
   - Holds bot-authored PRs at pending until enough humans have approved
     (`ai_review.bot_pr_human_approvers`, default 2; `exclude` exempts specific bots)
-  - Optionally holds PRs at pending (`Review again - Substantial changes since
+  - Holds PRs at pending (`Review again - Substantial changes since
     last review`) once they've outgrown their last AI review
     (`ai_review.stale_detection`), until another AI review is requested. Only
     lines added to the PR's own diff count, so rebases and base-branch merges
@@ -190,7 +190,7 @@ ai_review:
     exclude:               # bot authors exempt from the requirement
       - "dependabot[bot]"  # (exact logins, case-insensitive; [] for none)
   stale_detection:         # re-require an AI review once the PR outgrows it
-    enabled: false         # set true to hold stale PRs at pending
+    enabled: true          # set false to never hold stale PRs at pending
     auto_invite: true      # invite a re-review, wherever `automatic` would invite
     percent: 10            # stale once lines added since the last AI review
     min_lines: 10          # exceed max(min_lines, percent% of PR additions)

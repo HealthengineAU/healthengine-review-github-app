@@ -340,10 +340,10 @@ test("normalizeAiReview: exposes botPrHumanApprovers with defaults", () => {
 // normalizeStaleDetection
 // ---------------------------------------------------------------------------
 
-test("normalizeStaleDetection: opt-in with defaults for missing or junk values", () => {
-  for (const raw of [undefined, null, {}, "nonsense", 42, [], { enabled: "true" }]) {
+test("normalizeStaleDetection: on, with defaults for missing or junk values", () => {
+  for (const raw of [undefined, null, {}, "nonsense", 42, [], { enabled: "false" }]) {
     const result = normalizeStaleDetection(raw);
-    assert.equal(result.enabled, false, JSON.stringify(raw));
+    assert.equal(result.enabled, true, JSON.stringify(raw));
     assert.equal(result.autoInvite, true, JSON.stringify(raw));
     assert.equal(result.percent, 10, JSON.stringify(raw));
     assert.equal(result.minLines, 10, JSON.stringify(raw));
@@ -355,8 +355,8 @@ test("normalizeStaleDetection: opt-in with defaults for missing or junk values",
 });
 
 test("normalizeStaleDetection: accepts valid thresholds, including 0", () => {
-  const result = normalizeStaleDetection({ enabled: true, percent: 0, min_lines: 10 });
-  assert.equal(result.enabled, true);
+  const result = normalizeStaleDetection({ enabled: false, percent: 0, min_lines: 10 });
+  assert.equal(result.enabled, false);
   assert.equal(result.percent, 0);
   assert.equal(result.minLines, 10);
 });
@@ -382,9 +382,9 @@ test("normalizeStaleDetection: ignore_paths replaces the default; [] ignores not
   assert.equal(normalizeStaleDetection({ ignore_paths: [] }).ignorePaths.length, 0);
 });
 
-test("normalizeAiReview: exposes staleDetection, disabled by default", () => {
-  assert.equal(normalizeAiReview({}).staleDetection.enabled, false);
-  assert.equal(normalizeAiReview({ stale_detection: { enabled: true } }).staleDetection.enabled, true);
+test("normalizeAiReview: exposes staleDetection, enabled by default", () => {
+  assert.equal(normalizeAiReview({}).staleDetection.enabled, true);
+  assert.equal(normalizeAiReview({ stale_detection: { enabled: false } }).staleDetection.enabled, false);
 });
 
 test("loadAiReviewConfig: exposes ai_review.bot_pr_human_approvers", async () => {
