@@ -10,6 +10,7 @@ import {
   normalizeIssueLinkRules,
   normalizeProviders,
   normalizeSkipAuthors,
+  normalizeStaleDetection,
   loadAiReviewConfig,
 } from "../lib/config.js";
 import { matchesFilterPatterns } from "../lib/filter-patterns.js";
@@ -333,6 +334,57 @@ test("normalizeAiReview: exposes botPrHumanApprovers with defaults", () => {
   const result = normalizeAiReview({});
   assert.equal(result.botPrHumanApprovers.min, 2);
   assert.deepEqual([...result.botPrHumanApprovers.exclude], ["dependabot[bot]"]);
+});
+
+// ---------------------------------------------------------------------------
+// normalizeStaleDetection
+// ---------------------------------------------------------------------------
+
+test("normalizeStaleDetection: on, with defaults for missing or junk values", () => {
+  for (const raw of [undefined, null, {}, "nonsense", 42, [], { enabled: "false" }]) {
+    const result = normalizeStaleDetection(raw);
+    assert.equal(result.enabled, true, JSON.stringify(raw));
+    assert.equal(result.autoInvite, true, JSON.stringify(raw));
+    assert.equal(result.percent, 10, JSON.stringify(raw));
+    assert.equal(result.minLines, 10, JSON.stringify(raw));
+    assert.equal(matchesFilterPatterns(result.ignorePaths, "composer.lock"), true);
+    assert.equal(matchesFilterPatterns(result.ignorePaths, "web/package-lock.json"), true);
+    assert.equal(matchesFilterPatterns(result.ignorePaths, "src/__snapshots__/a.test.js.snap"), true);
+    assert.equal(matchesFilterPatterns(result.ignorePaths, "src/app.js"), false);
+  }
+});
+
+test("normalizeStaleDetection: accepts valid thresholds, including 0", () => {
+  const result = normalizeStaleDetection({ enabled: false, percent: 0, min_lines: 10 });
+  assert.equal(result.enabled, false);
+  assert.equal(result.percent, 0);
+  assert.equal(result.minLines, 10);
+});
+
+test("normalizeStaleDetection: invalid thresholds fall back to defaults", () => {
+  for (const bad of ["5", -1, NaN, Infinity, {}, null]) {
+    const result = normalizeStaleDetection({ percent: bad, min_lines: bad });
+    assert.equal(result.percent, 10, String(bad));
+    assert.equal(result.minLines, 10, String(bad));
+  }
+});
+
+test("normalizeStaleDetection: auto_invite is on unless explicitly false", () => {
+  assert.equal(normalizeStaleDetection({ auto_invite: false }).autoInvite, false);
+  assert.equal(normalizeStaleDetection({ auto_invite: "no" }).autoInvite, true);
+});
+
+test("normalizeStaleDetection: ignore_paths replaces the default; [] ignores nothing", () => {
+  const custom = normalizeStaleDetection({ ignore_paths: [" **/generated/** ", "", 42] });
+  assert.equal(matchesFilterPatterns(custom.ignorePaths, "web/generated/types.ts"), true);
+  assert.equal(matchesFilterPatterns(custom.ignorePaths, "composer.lock"), false);
+
+  assert.equal(normalizeStaleDetection({ ignore_paths: [] }).ignorePaths.length, 0);
+});
+
+test("normalizeAiReview: exposes staleDetection, enabled by default", () => {
+  assert.equal(normalizeAiReview({}).staleDetection.enabled, true);
+  assert.equal(normalizeAiReview({ stale_detection: { enabled: false } }).staleDetection.enabled, false);
 });
 
 test("loadAiReviewConfig: exposes ai_review.bot_pr_human_approvers", async () => {

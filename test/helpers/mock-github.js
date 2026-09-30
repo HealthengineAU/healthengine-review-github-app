@@ -61,6 +61,7 @@ export function makeOctokit(responses = {}) {
         createWorkflowDispatch: record("rest.actions.createWorkflowDispatch"),
       },
       repos: {
+        compareCommitsWithBasehead: record("rest.repos.compareCommitsWithBasehead"),
         createCommitStatus: record("rest.repos.createCommitStatus"),
         getCombinedStatusForRef: record("rest.repos.getCombinedStatusForRef"),
         listPullRequestsAssociatedWithCommit: record("rest.repos.listPullRequestsAssociatedWithCommit"),
