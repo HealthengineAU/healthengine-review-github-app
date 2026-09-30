@@ -54,6 +54,12 @@ test("countLinesAddedSince: ignored paths count towards neither side", () => {
   assert.deepEqual(countLinesAddedSince([], after, ignore), { linesAdded: 1, prAdditions: 1 });
 });
 
+test("countLinesAddedSince: a patch missing on the reviewed side also falls back to additions growth", () => {
+  const before = [{ filename: "big.sql", additions: 3, deletions: 0 }];
+  const after = [file("big.sql", ["a", "b", "c", "d"])];
+  assert.equal(countLinesAddedSince(before, after).linesAdded, 1);
+});
+
 test("countLinesAddedSince: files without a patch fall back to additions growth", () => {
   const before = [{ filename: "big.sql", additions: 100, deletions: 0 }];
   const after = [{ filename: "big.sql", additions: 130, deletions: 0 }];

@@ -916,7 +916,7 @@ test("an edited bot review updates the status (Copilot never emits submitted)", 
 
 const copilotBot = { login: "copilot-pull-request-reviewer[bot]", type: "Bot", id: 175728472 };
 
-function makeStaleOctokit({ addedSinceReview }) {
+function makeStaleOctokit({ addedSinceReview, statuses = [] }) {
   const reviewed = Array.from({ length: 100 }, (_, i) => `+line ${i}`);
   const added = Array.from({ length: addedSinceReview }, (_, i) => `+new ${i}`);
   const files = (lines) => [{ filename: "app.js", additions: lines.length, deletions: 0, patch: lines.join("\n") }];
@@ -933,6 +933,7 @@ function makeStaleOctokit({ addedSinceReview }) {
     "rest.repos.compareCommitsWithBasehead": ({ basehead }) => ({
       data: { files: files(basehead === "main...reviewed" ? reviewed : [...reviewed, ...added]) },
     }),
+    "rest.repos.getCombinedStatusForRef": { data: { statuses } },
   });
 }
 
@@ -1095,4 +1096,35 @@ test("no re-invite where automatic invites are off", async (t) => {
 
   assert.equal(statusCalls(octokit)[0].args.state, "pending");
   assert.equal(copilotInvites(octokit).length, 0);
+});
+
+test("a finished gitStream run doesn't count as a pending re-review", async (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  const { app, dispatch } = makeApp();
+  register(app);
+  const octokit = makeStaleOctokit({
+    addedSinceReview: 20,
+    statuses: [{ context: "gitStream.cm", state: "success" }],
+  });
+
+  await dispatch("pull_request.synchronize", makeStaleContext(octokit));
+  await flushDebounce(t);
+
+  assert.equal(statusCalls(octokit)[0].args.state, "pending");
+});
+
+test("a running gitStream automation counts as a pending re-review", async (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  const { app, dispatch } = makeApp();
+  register(app);
+  const octokit = makeStaleOctokit({
+    addedSinceReview: 20,
+    statuses: [{ context: "gitStream.cm", state: "pending" }],
+  });
+
+  await dispatch("pull_request.synchronize", makeStaleContext(octokit));
+  await flushDebounce(t);
+
+  assert.equal(statusCalls(octokit)[0].args.state, "success");
+  assert.equal(compareCalls(octokit).length, 0);
 });
