@@ -397,6 +397,42 @@ test("review_requested: a 'dusty' team summons Dusty and leaves the request in p
   assert.equal(countCalls(octokit, "pulls.removeRequestedReviewers"), 0);
 });
 
+test("review_requested: the Dusty summon comment is 👀 on arrival and 👍 once the wake lands", async () => {
+  const { app, dispatch } = makeApp();
+  register(app);
+  const octokit = makeOctokit({
+    "rest.issues.createComment": { data: { id: 777 } },
+    "rest.reactions.createForIssueComment": { data: { id: 555 } },
+  });
+  const context = makeContext({
+    octokit,
+    config: dustyConfig(),
+    payload: {
+      pull_request: { number: 3 },
+      requested_team: { slug: "dusty", name: "Dusty" },
+      sender: { login: "david" },
+    },
+  });
+  await dispatch("pull_request.review_requested", context);
+  await new Promise((resolve) => setTimeout(resolve, 1));
+
+  assert.deepEqual(
+    calls(octokit, "rest.reactions.createForIssueComment").map((c) => [
+      c.args.owner,
+      c.args.comment_id,
+      c.args.content,
+    ]),
+    [
+      [context.repo().owner, 777, "eyes"],
+      [context.repo().owner, 777, "+1"],
+    ],
+  );
+
+  const removals = calls(octokit, "rest.reactions.deleteForIssueComment");
+  assert.equal(removals.length, 1);
+  assert.equal(removals[0].args.reaction_id, 555);
+});
+
 test("review_requested: a 'dusty' team with Dusty disabled clears the request and explains", async () => {
   const { app, dispatch } = makeApp();
   register(app);
