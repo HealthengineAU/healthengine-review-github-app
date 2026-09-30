@@ -22,6 +22,10 @@
     (under `ai_review.min_diff_size` changed lines, default 10)
   - Holds bot-authored PRs at pending until enough humans have approved
     (`ai_review.bot_pr_human_approvers`, default 2; `exclude` exempts specific bots)
+  - Optionally holds PRs at pending once they've outgrown their last AI review
+    (`ai_review.stale_review`), until another AI review is requested. Only
+    lines added to the PR's own diff count, so rebases and base-branch merges
+    never make a review stale
 - Triggers AI reviews:
   - Commenting `ai review` (or `<provider> review` for a specific bot)
   - Requesting review from teams named `HealthengineAU/AI Review` or `HealthengineAU/<provider>`
@@ -183,6 +187,16 @@ ai_review:
     min: 2                 # minimum number of human approvers
     exclude:               # bot authors exempt from the requirement
       - "dependabot[bot]"  # (exact logins, case-insensitive; [] for none)
+  stale_review:            # re-require an AI review once the PR outgrows it
+    enabled: false         # set true to hold stale PRs at pending
+    percent: 5             # stale once lines added since the last AI review
+    min_lines: 2           # exceed max(min_lines, percent% of PR additions)
+    ignore_paths:          # files that never count ([] for none)
+      - "**.lock"
+      - "**package-lock.json"
+      - "**pnpm-lock.yaml"
+      - "**go.sum"
+      - "**.snap"
 
 # Issue links (optional; omit the key entirely to disable).
 #

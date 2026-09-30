@@ -909,3 +909,110 @@ test("an edited bot review updates the status (Copilot never emits submitted)", 
   assert.equal(statuses.length, 1);
   assert.match(statuses[0].args.description, /Reviewed by Copilot/);
 });
+
+// ---------------------------------------------------------------------------
+// stale_review
+// ---------------------------------------------------------------------------
+
+const copilotBot = { login: "copilot-pull-request-reviewer[bot]", type: "Bot", id: 175728472 };
+
+function makeStaleOctokit({ addedSinceReview }) {
+  const reviewed = Array.from({ length: 100 }, (_, i) => `+line ${i}`);
+  const added = Array.from({ length: addedSinceReview }, (_, i) => `+new ${i}`);
+  const files = (lines) => [{ filename: "app.js", additions: lines.length, deletions: 0, patch: lines.join("\n") }];
+  return makeOctokit({
+    "paginate:rest.pulls.listReviews": [
+      {
+        user: copilotBot,
+        state: "COMMENTED",
+        body: "Copilot reviewed 1 file.",
+        submitted_at: "2026-07-01T00:00:00Z",
+        commit_id: "reviewed",
+      },
+    ],
+    "rest.repos.compareCommitsWithBasehead": ({ basehead }) => ({
+      data: { files: files(basehead === "main...reviewed" ? reviewed : [...reviewed, ...added]) },
+    }),
+  });
+}
+
+function makeStaleContext(octokit, { config = { ai_review: { stale_review: { enabled: true } } }, ...prOverrides } = {}) {
+  return makeContext({
+    octokit,
+    config,
+    payload: {
+      pull_request: makeOpenPr({
+        head: { sha: "head" },
+        base: { ref: "main" },
+        additions: 110,
+        deletions: 0,
+        ...prOverrides,
+      }),
+    },
+  });
+}
+
+const compareCalls = (octokit) =>
+  octokit.calls.filter((c) => c.method === "rest.repos.compareCommitsWithBasehead");
+
+test("a PR that outgrew its last AI review is held at pending", async (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  const { app, dispatch } = makeApp();
+  register(app);
+  const octokit = makeStaleOctokit({ addedSinceReview: 10 });
+
+  await dispatch("pull_request.synchronize", makeStaleContext(octokit));
+  await flushDebounce(t);
+
+  const statuses = statusCalls(octokit);
+  assert.equal(statuses.length, 1);
+  assert.equal(statuses[0].args.state, "pending");
+  assert.match(statuses[0].args.description, /^10 lines added since Copilot reviewed \(limit 5\)/);
+});
+
+test("a follow-up within the stale_review limit keeps the review green", async (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  const { app, dispatch } = makeApp();
+  register(app);
+  const octokit = makeStaleOctokit({ addedSinceReview: 3 });
+
+  await dispatch("pull_request.synchronize", makeStaleContext(octokit));
+  await flushDebounce(t);
+
+  const statuses = statusCalls(octokit);
+  assert.equal(statuses.length, 1);
+  assert.equal(statuses[0].args.state, "success");
+  assert.match(statuses[0].args.description, /Reviewed by Copilot/);
+});
+
+test("a requested re-review satisfies stale_review without measuring", async (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  const { app, dispatch } = makeApp();
+  register(app);
+  const octokit = makeStaleOctokit({ addedSinceReview: 50 });
+
+  await dispatch("pull_request.synchronize", makeStaleContext(octokit, {
+    requested_reviewers: [copilotBot],
+  }));
+  await flushDebounce(t);
+
+  const statuses = statusCalls(octokit);
+  assert.equal(statuses.length, 1);
+  assert.equal(statuses[0].args.state, "success");
+  assert.equal(compareCalls(octokit).length, 0);
+});
+
+test("stale_review is off unless enabled", async (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  const { app, dispatch } = makeApp();
+  register(app);
+  const octokit = makeStaleOctokit({ addedSinceReview: 50 });
+
+  await dispatch("pull_request.synchronize", makeStaleContext(octokit, { config: {} }));
+  await flushDebounce(t);
+
+  const statuses = statusCalls(octokit);
+  assert.equal(statuses.length, 1);
+  assert.equal(statuses[0].args.state, "success");
+  assert.equal(compareCalls(octokit).length, 0);
+});
