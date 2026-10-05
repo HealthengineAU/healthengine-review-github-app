@@ -11,7 +11,7 @@
 
 - Manages the `AI Review` commit status:
   - Added once a pull request has requested/received AI review
-  - Shows a passing `Requested <reviewer>` state as soon as a review is
+  - Shows a pending `Requested <reviewer>` state as soon as a review is
     summoned (via any trigger below, a requested Copilot reviewer, or a
     human-typed `auggie review` comment), then flips to `Reviewed by …`
   - Tracks whether AI feedback has been addressed (i.e. resolved, responded to, is now outdated)

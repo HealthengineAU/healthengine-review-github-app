@@ -457,6 +457,31 @@ test("bot PR flips to success once the approval minimum is met", async (t) => {
   assert.match(statuses[0].args.description, /Bot authored PR has 2 human approvals/);
 });
 
+test("an approved bot PR stays green while an AI review is only requested", async (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  const { app, dispatch } = makeApp();
+  register(app);
+  const octokit = makeOctokit({
+    "paginate:rest.pulls.listReviews": [approvalBy(1, "david"), approvalBy(2, "erin")],
+  });
+  const context = makeContext({
+    octokit,
+    payload: {
+      pull_request: makeBotPr({
+        requested_teams: [{ slug: "auggie", name: "Auggie" }],
+      }),
+    },
+  });
+
+  await dispatch("pull_request.review_requested", context);
+  await flushDebounce(t);
+
+  const statuses = statusCalls(octokit);
+  assert.equal(statuses.length, 1);
+  assert.equal(statuses[0].args.state, "success");
+  assert.match(statuses[0].args.description, /Requested Auggie/);
+});
+
 test("a superseding changes-requested review reopens the gate", async (t) => {
   t.mock.timers.enable({ apis: ["setTimeout"] });
   const { app, dispatch } = makeApp();
@@ -676,7 +701,7 @@ function makeOpenPr(overrides = {}) {
   };
 }
 
-test("our Auggie summon comment produces a green 'Requested Auggie' status", async (t) => {
+test("our Auggie summon comment produces a pending 'Requested Auggie' status", async (t) => {
   t.mock.timers.enable({ apis: ["setTimeout"] });
   const { app, dispatch } = makeApp();
   register(app);
@@ -702,7 +727,7 @@ test("our Auggie summon comment produces a green 'Requested Auggie' status", asy
 
   const statuses = statusCalls(octokit);
   assert.equal(statuses.length, 1);
-  assert.equal(statuses[0].args.state, "success");
+  assert.equal(statuses[0].args.state, "pending");
   assert.match(statuses[0].args.description, /Requested Auggie/);
 });
 
@@ -754,7 +779,7 @@ test("an unrelated human comment does not refresh the status", async (t) => {
   assert.equal(octokit.calls.length, 0);
 });
 
-test("an Auggie team request produces a 'Requested Auggie' status", async (t) => {
+test("an Auggie team request produces a pending 'Requested Auggie' status", async (t) => {
   t.mock.timers.enable({ apis: ["setTimeout"] });
   const { app, dispatch } = makeApp();
   register(app);
@@ -773,7 +798,7 @@ test("an Auggie team request produces a 'Requested Auggie' status", async (t) =>
 
   const statuses = statusCalls(octokit);
   assert.equal(statuses.length, 1);
-  assert.equal(statuses[0].args.state, "success");
+  assert.equal(statuses[0].args.state, "pending");
   assert.match(statuses[0].args.description, /Requested Auggie/);
 });
 
@@ -798,6 +823,7 @@ test("a requested Copilot reviewer still produces 'Requested Copilot'", async (t
 
   const statuses = statusCalls(octokit);
   assert.equal(statuses.length, 1);
+  assert.equal(statuses[0].args.state, "pending");
   assert.match(statuses[0].args.description, /Requested Copilot/);
 });
 
@@ -820,8 +846,37 @@ test("a running gitStream automation shows 'Requested LinearB'", async (t) => {
 
   const statuses = statusCalls(octokit);
   assert.equal(statuses.length, 1);
-  assert.equal(statuses[0].args.state, "success");
+  assert.equal(statuses[0].args.state, "pending");
   assert.match(statuses[0].args.description, /Requested LinearB/);
+});
+
+test("a delivered review alongside a pending request stays green", async (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  const { app, dispatch } = makeApp();
+  register(app);
+  const copilot = { login: "copilot-pull-request-reviewer[bot]", type: "Bot", id: 9 };
+  const octokit = makeOctokit({
+    "paginate:rest.pulls.listReviews": [
+      { user: copilot, body: "Copilot reviewed 2 files.", submitted_at: "2026-07-01T00:00:00Z" },
+    ],
+  });
+  const context = makeContext({
+    octokit,
+    payload: {
+      pull_request: makeOpenPr({
+        requested_teams: [{ slug: "auggie", name: "Auggie" }],
+      }),
+    },
+  });
+
+  await dispatch("pull_request.review_requested", context);
+  await flushDebounce(t);
+
+  const statuses = statusCalls(octokit);
+  assert.equal(statuses.length, 1);
+  assert.equal(statuses[0].args.state, "success");
+  assert.match(statuses[0].args.description, /Requested Auggie/);
+  assert.match(statuses[0].args.description, /Reviewed by Copilot/);
 });
 
 test("a delivered Augment review wins over its own summon", async (t) => {
