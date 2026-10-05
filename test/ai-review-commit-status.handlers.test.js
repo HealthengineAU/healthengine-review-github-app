@@ -971,7 +971,7 @@ test("an edited bot review updates the status (Copilot never emits submitted)", 
 
 const copilotBot = { login: "copilot-pull-request-reviewer[bot]", type: "Bot", id: 175728472 };
 
-function makeStaleOctokit({ addedSinceReview, statuses = [] }) {
+function makeStaleOctokit({ addedSinceReview, statuses = [], reviews = [] }) {
   const reviewed = Array.from({ length: 100 }, (_, i) => `+line ${i}`);
   const added = Array.from({ length: addedSinceReview }, (_, i) => `+new ${i}`);
   const files = (lines) => [{ filename: "app.js", additions: lines.length, deletions: 0, patch: lines.join("\n") }];
@@ -984,6 +984,7 @@ function makeStaleOctokit({ addedSinceReview, statuses = [] }) {
         submitted_at: "2026-07-01T00:00:00Z",
         commit_id: "reviewed",
       },
+      ...reviews,
     ],
     "rest.repos.compareCommitsWithBasehead": ({ basehead }) => ({
       data: { files: files(basehead === "main...reviewed" ? reviewed : [...reviewed, ...added]) },
@@ -1041,7 +1042,7 @@ test("a follow-up within the stale_detection limit keeps the review green", asyn
   assert.match(statuses[0].args.description, /Reviewed by Copilot/);
 });
 
-test("a requested re-review satisfies stale_detection without measuring", async (t) => {
+test("a requested re-review holds a stale PR at pending until it lands", async (t) => {
   t.mock.timers.enable({ apis: ["setTimeout"] });
   const { app, dispatch } = makeApp();
   register(app);
@@ -1054,8 +1055,58 @@ test("a requested re-review satisfies stale_detection without measuring", async 
 
   const statuses = statusCalls(octokit);
   assert.equal(statuses.length, 1);
+  assert.equal(statuses[0].args.state, "pending");
+  assert.equal(statuses[0].args.description, "Requested Copilot - Substantial changes since last review");
+});
+
+test("a new review from any bot clears a stale PR", async (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  const { app, dispatch } = makeApp();
+  register(app);
+  const octokit = makeStaleOctokit({
+    addedSinceReview: 50,
+    reviews: [{
+      user: { login: "augmentcode[bot]", type: "Bot", id: 77 },
+      state: "COMMENTED",
+      body: "Here is my review",
+      submitted_at: "2026-07-02T00:00:00Z",
+      commit_id: "head",
+    }],
+  });
+
+  await dispatch("pull_request.synchronize", makeStaleContext(octokit, {
+    requested_reviewers: [copilotBot],
+  }));
+  await flushDebounce(t);
+
+  const statuses = statusCalls(octokit);
+  assert.equal(statuses.length, 1);
   assert.equal(statuses[0].args.state, "success");
-  assert.equal(compareCalls(octokit).length, 0);
+});
+
+test("re-requesting one of two stale bot reviews keeps the status pending", async (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  const { app, dispatch } = makeApp();
+  register(app);
+  const octokit = makeStaleOctokit({
+    addedSinceReview: 50,
+    reviews: [{
+      user: { login: "augmentcode[bot]", type: "Bot", id: 77 },
+      state: "COMMENTED",
+      body: "Here is my review",
+      submitted_at: "2026-07-01T00:01:00Z",
+      commit_id: "reviewed",
+    }],
+  });
+
+  await dispatch("pull_request.review_requested", makeStaleContext(octokit, {
+    requested_reviewers: [copilotBot],
+  }));
+  await flushDebounce(t);
+
+  const statuses = statusCalls(octokit);
+  assert.equal(statuses.length, 1);
+  assert.equal(statuses[0].args.state, "pending");
 });
 
 test("stale_detection enabled: false turns it off", async (t) => {
@@ -1180,6 +1231,6 @@ test("a running gitStream automation counts as a pending re-review", async (t) =
   await dispatch("pull_request.synchronize", makeStaleContext(octokit));
   await flushDebounce(t);
 
-  assert.equal(statusCalls(octokit)[0].args.state, "success");
-  assert.equal(compareCalls(octokit).length, 0);
+  assert.equal(statusCalls(octokit)[0].args.state, "pending");
+  assert.match(statusCalls(octokit)[0].args.description, /^Requested LinearB/);
 });
