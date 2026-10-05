@@ -24,7 +24,7 @@
     (`ai_review.bot_pr_human_approvers`, default 2; `exclude` exempts specific bots)
   - Holds PRs at pending (`Review again - Substantial changes since
     last review`) once they've outgrown their last AI review
-    (`ai_review.stale_detection`), until another AI review is requested. Only
+    (`ai_review.stale_detection`), until any AI reviewer reviews again. Only
     lines added to the PR's own diff count, so rebases and base-branch merges
     never make a review stale. Where automatic invites apply, a re-review is
     invited too — for drafts, once marked ready for review
