@@ -64,6 +64,7 @@ export function makeOctokit(responses = {}) {
         compareCommitsWithBasehead: record("rest.repos.compareCommitsWithBasehead"),
         createCommitStatus: record("rest.repos.createCommitStatus"),
         getCombinedStatusForRef: record("rest.repos.getCombinedStatusForRef"),
+        listCommitStatusesForRef: tag("rest.repos.listCommitStatusesForRef"),
         listPullRequestsAssociatedWithCommit: record("rest.repos.listPullRequestsAssociatedWithCommit"),
       },
       issues: {
@@ -71,6 +72,9 @@ export function makeOctokit(responses = {}) {
         createComment: record("rest.issues.createComment"),
         updateComment: record("rest.issues.updateComment"),
         removeLabel: record("rest.issues.removeLabel"),
+      },
+      users: {
+        getByUsername: record("rest.users.getByUsername"),
       },
       pulls: {
         get: record("rest.pulls.get"),
