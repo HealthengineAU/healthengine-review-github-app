@@ -64,6 +64,7 @@ export function makeOctokit(responses = {}) {
         compareCommitsWithBasehead: record("rest.repos.compareCommitsWithBasehead"),
         createCommitStatus: record("rest.repos.createCommitStatus"),
         getCombinedStatusForRef: record("rest.repos.getCombinedStatusForRef"),
+        listCommitStatusesForRef: tag("rest.repos.listCommitStatusesForRef"),
         listPullRequestsAssociatedWithCommit: record("rest.repos.listPullRequestsAssociatedWithCommit"),
       },
       issues: {

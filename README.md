@@ -74,12 +74,14 @@
     suggesting one of `gorgeous`, `magnificent`, `splendid`, `stunning`, `sublime`
     (picked by PR number; any of the five works, and the labels must exist in the repo)
   - Adding one stamps the tool's PR comment with the labeler and the comment's
-    fingerprint, and flips the pending statuses to `Approved by <name> — …`. Anyone
-    able to label the PR can approve; a label on a PR with no fingerprinted comment does nothing
+    fingerprint (signed with the app's webhook secret, so a hand-written stamp
+    counts for nothing), and flips the pending statuses to `Approved by <name> — …`.
+    Anyone able to label the PR can approve; a label on a PR with no fingerprinted comment does nothing
   - Later builds stay approved while their fingerprint matches the stamp; a different
     fingerprint on any status removes the labels and stamps and puts the statuses back to pending
   - Removing the label by hand does the same
-  - The app's own statuses never carry `fp=`, so it only ever reacts to the tools'
+  - The app recognises its own statuses by their description prefix and acts only
+    on the latest status for a context, so replayed or stale events are ignored
 - Starts incidents from Slack (`/incident`, see below):
   - One short form raises an `INCY` Incident. *Open* posts a triage thread in
     the current channel (or the incidents channel, where the app can't post),
