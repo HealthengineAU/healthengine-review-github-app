@@ -10,7 +10,7 @@ import { makeApp, makeOctokit, makeContext } from "./helpers/mock-github.js";
 async function flushDebounce(t) {
   t.mock.timers.tick(1000);
   // Let the async updateAIReviewStatus() chain resolve.
-  for (let i = 0; i < 20; i++) await Promise.resolve();
+  for (let i = 0; i < 50; i++) await Promise.resolve();
 }
 
 function statusCalls(octokit) {
@@ -457,6 +457,31 @@ test("bot PR flips to success once the approval minimum is met", async (t) => {
   assert.match(statuses[0].args.description, /Bot authored PR has 2 human approvals/);
 });
 
+test("an approved bot PR stays green while an AI review is only requested", async (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  const { app, dispatch } = makeApp();
+  register(app);
+  const octokit = makeOctokit({
+    "paginate:rest.pulls.listReviews": [approvalBy(1, "david"), approvalBy(2, "erin")],
+  });
+  const context = makeContext({
+    octokit,
+    payload: {
+      pull_request: makeBotPr({
+        requested_teams: [{ slug: "auggie", name: "Auggie" }],
+      }),
+    },
+  });
+
+  await dispatch("pull_request.review_requested", context);
+  await flushDebounce(t);
+
+  const statuses = statusCalls(octokit);
+  assert.equal(statuses.length, 1);
+  assert.equal(statuses[0].args.state, "success");
+  assert.match(statuses[0].args.description, /Requested Auggie/);
+});
+
 test("a superseding changes-requested review reopens the gate", async (t) => {
   t.mock.timers.enable({ apis: ["setTimeout"] });
   const { app, dispatch } = makeApp();
@@ -676,7 +701,7 @@ function makeOpenPr(overrides = {}) {
   };
 }
 
-test("our Auggie summon comment produces a green 'Requested Auggie' status", async (t) => {
+test("our Auggie summon comment produces a pending 'Requested Auggie' status", async (t) => {
   t.mock.timers.enable({ apis: ["setTimeout"] });
   const { app, dispatch } = makeApp();
   register(app);
@@ -702,7 +727,7 @@ test("our Auggie summon comment produces a green 'Requested Auggie' status", asy
 
   const statuses = statusCalls(octokit);
   assert.equal(statuses.length, 1);
-  assert.equal(statuses[0].args.state, "success");
+  assert.equal(statuses[0].args.state, "pending");
   assert.match(statuses[0].args.description, /Requested Auggie/);
 });
 
@@ -754,7 +779,7 @@ test("an unrelated human comment does not refresh the status", async (t) => {
   assert.equal(octokit.calls.length, 0);
 });
 
-test("an Auggie team request produces a 'Requested Auggie' status", async (t) => {
+test("an Auggie team request produces a pending 'Requested Auggie' status", async (t) => {
   t.mock.timers.enable({ apis: ["setTimeout"] });
   const { app, dispatch } = makeApp();
   register(app);
@@ -773,7 +798,7 @@ test("an Auggie team request produces a 'Requested Auggie' status", async (t) =>
 
   const statuses = statusCalls(octokit);
   assert.equal(statuses.length, 1);
-  assert.equal(statuses[0].args.state, "success");
+  assert.equal(statuses[0].args.state, "pending");
   assert.match(statuses[0].args.description, /Requested Auggie/);
 });
 
@@ -798,6 +823,7 @@ test("a requested Copilot reviewer still produces 'Requested Copilot'", async (t
 
   const statuses = statusCalls(octokit);
   assert.equal(statuses.length, 1);
+  assert.equal(statuses[0].args.state, "pending");
   assert.match(statuses[0].args.description, /Requested Copilot/);
 });
 
@@ -820,8 +846,37 @@ test("a running gitStream automation shows 'Requested LinearB'", async (t) => {
 
   const statuses = statusCalls(octokit);
   assert.equal(statuses.length, 1);
-  assert.equal(statuses[0].args.state, "success");
+  assert.equal(statuses[0].args.state, "pending");
   assert.match(statuses[0].args.description, /Requested LinearB/);
+});
+
+test("a delivered review alongside a pending request stays green", async (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  const { app, dispatch } = makeApp();
+  register(app);
+  const copilot = { login: "copilot-pull-request-reviewer[bot]", type: "Bot", id: 9 };
+  const octokit = makeOctokit({
+    "paginate:rest.pulls.listReviews": [
+      { user: copilot, body: "Copilot reviewed 2 files.", submitted_at: "2026-07-01T00:00:00Z" },
+    ],
+  });
+  const context = makeContext({
+    octokit,
+    payload: {
+      pull_request: makeOpenPr({
+        requested_teams: [{ slug: "auggie", name: "Auggie" }],
+      }),
+    },
+  });
+
+  await dispatch("pull_request.review_requested", context);
+  await flushDebounce(t);
+
+  const statuses = statusCalls(octokit);
+  assert.equal(statuses.length, 1);
+  assert.equal(statuses[0].args.state, "success");
+  assert.match(statuses[0].args.description, /Requested Auggie/);
+  assert.match(statuses[0].args.description, /Reviewed by Copilot/);
 });
 
 test("a delivered Augment review wins over its own summon", async (t) => {
@@ -908,4 +963,274 @@ test("an edited bot review updates the status (Copilot never emits submitted)", 
   const statuses = statusCalls(octokit);
   assert.equal(statuses.length, 1);
   assert.match(statuses[0].args.description, /Reviewed by Copilot/);
+});
+
+// ---------------------------------------------------------------------------
+// stale_detection
+// ---------------------------------------------------------------------------
+
+const copilotBot = { login: "copilot-pull-request-reviewer[bot]", type: "Bot", id: 175728472 };
+
+function makeStaleOctokit({ addedSinceReview, statuses = [], reviews = [] }) {
+  const reviewed = Array.from({ length: 100 }, (_, i) => `+line ${i}`);
+  const added = Array.from({ length: addedSinceReview }, (_, i) => `+new ${i}`);
+  const files = (lines) => [{ filename: "app.js", additions: lines.length, deletions: 0, patch: lines.join("\n") }];
+  return makeOctokit({
+    "paginate:rest.pulls.listReviews": [
+      {
+        user: copilotBot,
+        state: "COMMENTED",
+        body: "Copilot reviewed 1 file.",
+        submitted_at: "2026-07-01T00:00:00Z",
+        commit_id: "reviewed",
+      },
+      ...reviews,
+    ],
+    "rest.repos.compareCommitsWithBasehead": ({ basehead }) => ({
+      data: { files: files(basehead === "main...reviewed" ? reviewed : [...reviewed, ...added]) },
+    }),
+    "rest.repos.getCombinedStatusForRef": { data: { statuses } },
+  });
+}
+
+function makeStaleContext(octokit, { config = {}, ...prOverrides } = {}) {
+  return makeContext({
+    octokit,
+    config,
+    payload: {
+      pull_request: makeOpenPr({
+        head: { sha: "head" },
+        base: { ref: "main" },
+        additions: 110,
+        deletions: 0,
+        ...prOverrides,
+      }),
+    },
+  });
+}
+
+const compareCalls = (octokit) =>
+  octokit.calls.filter((c) => c.method === "rest.repos.compareCommitsWithBasehead");
+
+test("a PR that outgrew its last AI review is held at pending", async (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  const { app, dispatch } = makeApp();
+  register(app);
+  const octokit = makeStaleOctokit({ addedSinceReview: 20 });
+
+  await dispatch("pull_request.synchronize", makeStaleContext(octokit));
+  await flushDebounce(t);
+
+  const statuses = statusCalls(octokit);
+  assert.equal(statuses.length, 1);
+  assert.equal(statuses[0].args.state, "pending");
+  assert.equal(statuses[0].args.description, "Review again - Substantial changes since last review");
+});
+
+test("a follow-up within the stale_detection limit keeps the review green", async (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  const { app, dispatch } = makeApp();
+  register(app);
+  const octokit = makeStaleOctokit({ addedSinceReview: 3 });
+
+  await dispatch("pull_request.synchronize", makeStaleContext(octokit));
+  await flushDebounce(t);
+
+  const statuses = statusCalls(octokit);
+  assert.equal(statuses.length, 1);
+  assert.equal(statuses[0].args.state, "success");
+  assert.match(statuses[0].args.description, /Reviewed by Copilot/);
+});
+
+test("a requested re-review holds a stale PR at pending until it lands", async (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  const { app, dispatch } = makeApp();
+  register(app);
+  const octokit = makeStaleOctokit({ addedSinceReview: 50 });
+
+  await dispatch("pull_request.synchronize", makeStaleContext(octokit, {
+    requested_reviewers: [copilotBot],
+  }));
+  await flushDebounce(t);
+
+  const statuses = statusCalls(octokit);
+  assert.equal(statuses.length, 1);
+  assert.equal(statuses[0].args.state, "pending");
+  assert.equal(statuses[0].args.description, "Requested Copilot - Substantial changes since last review");
+});
+
+test("a new review from any bot clears a stale PR", async (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  const { app, dispatch } = makeApp();
+  register(app);
+  const octokit = makeStaleOctokit({
+    addedSinceReview: 50,
+    reviews: [{
+      user: { login: "augmentcode[bot]", type: "Bot", id: 77 },
+      state: "COMMENTED",
+      body: "Here is my review",
+      submitted_at: "2026-07-02T00:00:00Z",
+      commit_id: "head",
+    }],
+  });
+
+  await dispatch("pull_request.synchronize", makeStaleContext(octokit, {
+    requested_reviewers: [copilotBot],
+  }));
+  await flushDebounce(t);
+
+  const statuses = statusCalls(octokit);
+  assert.equal(statuses.length, 1);
+  assert.equal(statuses[0].args.state, "success");
+});
+
+test("re-requesting one of two stale bot reviews keeps the status pending", async (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  const { app, dispatch } = makeApp();
+  register(app);
+  const octokit = makeStaleOctokit({
+    addedSinceReview: 50,
+    reviews: [{
+      user: { login: "augmentcode[bot]", type: "Bot", id: 77 },
+      state: "COMMENTED",
+      body: "Here is my review",
+      submitted_at: "2026-07-01T00:01:00Z",
+      commit_id: "reviewed",
+    }],
+  });
+
+  await dispatch("pull_request.review_requested", makeStaleContext(octokit, {
+    requested_reviewers: [copilotBot],
+  }));
+  await flushDebounce(t);
+
+  const statuses = statusCalls(octokit);
+  assert.equal(statuses.length, 1);
+  assert.equal(statuses[0].args.state, "pending");
+});
+
+test("stale_detection enabled: false turns it off", async (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  const { app, dispatch } = makeApp();
+  register(app);
+  const octokit = makeStaleOctokit({ addedSinceReview: 50 });
+
+  await dispatch("pull_request.synchronize", makeStaleContext(octokit, {
+    config: { ai_review: { stale_detection: { enabled: false } } },
+  }));
+  await flushDebounce(t);
+
+  const statuses = statusCalls(octokit);
+  assert.equal(statuses.length, 1);
+  assert.equal(statuses[0].args.state, "success");
+  assert.equal(compareCalls(octokit).length, 0);
+});
+
+const AUTO_STALE_CONFIG = {
+  providers: ["copilot"],
+  ai_review: { automatic: true },
+};
+
+const copilotInvites = (octokit) =>
+  octokit.calls.filter((c) => c.method === "rest.pulls.requestReviewers");
+
+test("a stale review invites a re-review where automatic invites apply", async (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  const { app, dispatch } = makeApp();
+  register(app);
+  const octokit = makeStaleOctokit({ addedSinceReview: 20 });
+  const context = makeStaleContext(octokit, { config: AUTO_STALE_CONFIG });
+
+  await dispatch("pull_request.synchronize", context);
+  await flushDebounce(t);
+  await dispatch("pull_request.synchronize", context);
+  await flushDebounce(t);
+
+  assert.equal(copilotInvites(octokit).length, 1);
+  assert.deepEqual(copilotInvites(octokit)[0].args.reviewers, [copilotBot.login]);
+});
+
+test("a stale draft is re-invited once it's marked ready for review", async (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  const { app, dispatch } = makeApp();
+  register(app);
+  const octokit = makeStaleOctokit({ addedSinceReview: 20 });
+
+  await dispatch("pull_request.synchronize", makeStaleContext(octokit, {
+    config: AUTO_STALE_CONFIG,
+    draft: true,
+  }));
+  await flushDebounce(t);
+  assert.equal(copilotInvites(octokit).length, 0);
+
+  await dispatch("pull_request.ready_for_review", makeStaleContext(octokit, {
+    config: AUTO_STALE_CONFIG,
+    draft: false,
+  }));
+  await flushDebounce(t);
+  assert.equal(copilotInvites(octokit).length, 1);
+});
+
+test("auto_invite: false only holds the status", async (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  const { app, dispatch } = makeApp();
+  register(app);
+  const octokit = makeStaleOctokit({ addedSinceReview: 20 });
+
+  await dispatch("pull_request.synchronize", makeStaleContext(octokit, {
+    config: {
+      providers: ["copilot"],
+      ai_review: { automatic: true, stale_detection: { auto_invite: false } },
+    },
+  }));
+  await flushDebounce(t);
+
+  assert.equal(statusCalls(octokit)[0].args.state, "pending");
+  assert.equal(copilotInvites(octokit).length, 0);
+});
+
+test("no re-invite where automatic invites are off", async (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  const { app, dispatch } = makeApp();
+  register(app);
+  const octokit = makeStaleOctokit({ addedSinceReview: 20 });
+
+  await dispatch("pull_request.synchronize", makeStaleContext(octokit, {
+    config: { providers: ["copilot"] },
+  }));
+  await flushDebounce(t);
+
+  assert.equal(statusCalls(octokit)[0].args.state, "pending");
+  assert.equal(copilotInvites(octokit).length, 0);
+});
+
+test("a finished gitStream run doesn't count as a pending re-review", async (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  const { app, dispatch } = makeApp();
+  register(app);
+  const octokit = makeStaleOctokit({
+    addedSinceReview: 20,
+    statuses: [{ context: "gitStream.cm", state: "success" }],
+  });
+
+  await dispatch("pull_request.synchronize", makeStaleContext(octokit));
+  await flushDebounce(t);
+
+  assert.equal(statusCalls(octokit)[0].args.state, "pending");
+});
+
+test("a running gitStream automation counts as a pending re-review", async (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  const { app, dispatch } = makeApp();
+  register(app);
+  const octokit = makeStaleOctokit({
+    addedSinceReview: 20,
+    statuses: [{ context: "gitStream.cm", state: "pending" }],
+  });
+
+  await dispatch("pull_request.synchronize", makeStaleContext(octokit));
+  await flushDebounce(t);
+
+  assert.equal(statusCalls(octokit)[0].args.state, "pending");
+  assert.match(statusCalls(octokit)[0].args.description, /^Requested LinearB/);
 });

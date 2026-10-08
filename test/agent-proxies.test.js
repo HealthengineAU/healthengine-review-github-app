@@ -5,7 +5,9 @@ import { normalizeAgents } from "../lib/config.js";
 import {
   classifyReview,
   classifyComment,
+  classifyReviewComment,
   classifyStatus,
+  classifyOwnIssueComment,
 } from "../lib/agent-proxies.js";
 
 // normalizeAgents warns on malformed entries; silence the expected noise.
@@ -164,6 +166,33 @@ test("classifyComment: bots, ignore_users, the agent itself, and unmentioned for
 });
 
 // ---------------------------------------------------------------------------
+// classifyReviewComment
+// ---------------------------------------------------------------------------
+
+test("classifyReviewComment: an @mention is a mention wherever the thread started", () => {
+  assert.equal(classifyReviewComment(agent(), { commentAuthor: "david", isBot: false, body: "cc @dusty" }), "mention");
+});
+
+test("classifyReviewComment: an unmentioned reply wakes nothing, even on the agent's own thread", () => {
+  assert.equal(
+    classifyReviewComment(agent(), { commentAuthor: "jim", isBot: false, body: "surprised this is an issue" }),
+    null,
+  );
+});
+
+test("classifyReviewComment: bots, ignore_users and the agent itself are ignored", () => {
+  const a = agent();
+  assert.equal(classifyReviewComment(a, { commentAuthor: "copilot[bot]", isBot: true, body: "@dusty" }), null);
+  assert.equal(classifyReviewComment(a, { commentAuthor: "healthengine-sre", isBot: false, body: "@dusty" }), null);
+  assert.equal(classifyReviewComment(a, { commentAuthor: "dusty-the-robot[bot]", isBot: false, body: "@dusty" }), null);
+});
+
+test("classifyReviewComment: the mention event must be enabled", () => {
+  const noMention = normalizeAgents([{ ...RAW, events: ["comment"] }])[0];
+  assert.equal(classifyReviewComment(noMention, { commentAuthor: "david", isBot: false, body: "cc @dusty" }), null);
+});
+
+// ---------------------------------------------------------------------------
 // classifyStatus
 // ---------------------------------------------------------------------------
 
@@ -183,4 +212,36 @@ test("classifyStatus: passing/pending states or unwatched contexts are ignored",
 test("classifyStatus: null when check events are disabled", () => {
   const a = normalizeAgents([{ ...RAW, events: ["review"] }])[0];
   assert.equal(classifyStatus(a, { state: "failure", context: "buildkite/test" }), null);
+});
+
+// ---------------------------------------------------------------------------
+// classifyOwnIssueComment
+// ---------------------------------------------------------------------------
+
+const ownIssue = {
+  owner: "acme",
+  repo: "dusty",
+  issueState: "open",
+  commentAuthor: "david",
+  isBot: false,
+};
+
+test("classifyOwnIssueComment: a human reply in the agent's own repo is acked", () => {
+  assert.equal(classifyOwnIssueComment(agent(), ownIssue), "ack");
+  assert.equal(classifyOwnIssueComment(agent(), { ...ownIssue, owner: "ACME", repo: "Dusty" }), "ack");
+});
+
+test("classifyOwnIssueComment: other repos, closed issues, bots and ignored users are not", () => {
+  const a = agent();
+  assert.equal(classifyOwnIssueComment(a, { ...ownIssue, repo: "svc" }), null);
+  assert.equal(classifyOwnIssueComment(a, { ...ownIssue, owner: "someone-else" }), null);
+  assert.equal(classifyOwnIssueComment(a, { ...ownIssue, issueState: "closed" }), null);
+  assert.equal(classifyOwnIssueComment(a, { ...ownIssue, isBot: true }), null);
+  assert.equal(classifyOwnIssueComment(a, { ...ownIssue, commentAuthor: "dusty-the-robot[bot]" }), null);
+  assert.equal(classifyOwnIssueComment(a, { ...ownIssue, commentAuthor: "healthengine-sre" }), null);
+});
+
+test("classifyOwnIssueComment: null when comment events are disabled", () => {
+  const a = normalizeAgents([{ ...RAW, events: ["check"] }])[0];
+  assert.equal(classifyOwnIssueComment(a, ownIssue), null);
 });

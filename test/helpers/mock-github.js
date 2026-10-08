@@ -61,6 +61,7 @@ export function makeOctokit(responses = {}) {
         createWorkflowDispatch: record("rest.actions.createWorkflowDispatch"),
       },
       repos: {
+        compareCommitsWithBasehead: record("rest.repos.compareCommitsWithBasehead"),
         createCommitStatus: record("rest.repos.createCommitStatus"),
         getCombinedStatusForRef: record("rest.repos.getCombinedStatusForRef"),
         listPullRequestsAssociatedWithCommit: record("rest.repos.listPullRequestsAssociatedWithCommit"),
@@ -73,15 +74,20 @@ export function makeOctokit(responses = {}) {
       },
       pulls: {
         get: record("rest.pulls.get"),
+        getReviewComment: record("rest.pulls.getReviewComment"),
         listReviews: tag("rest.pulls.listReviews"),
         listReviewComments: tag("rest.pulls.listReviewComments"),
         requestReviewers: record("rest.pulls.requestReviewers"),
+        update: record("rest.pulls.update"),
         updateReview: record("rest.pulls.updateReview"),
         updateReviewComment: record("rest.pulls.updateReviewComment"),
       },
       reactions: {
         createForIssueComment: record("rest.reactions.createForIssueComment"),
+        deleteForIssueComment: record("rest.reactions.deleteForIssueComment"),
         listForIssueComment: tag("rest.reactions.listForIssueComment"),
+        createForPullRequestReviewComment: record("rest.reactions.createForPullRequestReviewComment"),
+        deleteForPullRequestComment: record("rest.reactions.deleteForPullRequestComment"),
       },
     },
     // Some handlers call context.octokit.pulls.* (not rest.pulls.*).

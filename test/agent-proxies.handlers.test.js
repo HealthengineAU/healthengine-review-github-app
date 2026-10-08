@@ -30,7 +30,7 @@ function dispatches(octokit) {
 
 // Dispatch a synthetic webhook, then run out the debounce timer and let the
 // async dispatch settle.
-async function fire(t, { event, payload, config = agentConfig(), octokit }) {
+async function fire(t, { event, payload, config = agentConfig(), octokit, repo }) {
   try {
     t.mock.timers.enable({ apis: ["setTimeout"] });
   } catch {
@@ -38,9 +38,22 @@ async function fire(t, { event, payload, config = agentConfig(), octokit }) {
   }
   const { app, dispatch } = makeApp();
   register(app);
-  await dispatch(event, makeContext({ octokit, config, payload }));
+  await dispatch(event, makeContext({ octokit, config, payload, ...(repo ? { repo } : {}) }));
   t.mock.timers.tick(46_000);
   for (let i = 0; i < 20; i++) await Promise.resolve();
+}
+
+// An octokit whose 👀 comes back with an id, so the swap to 👍 can delete it.
+const SEEN_ID = 555;
+function ackingOctokit(responses = {}) {
+  return makeOctokit({
+    "rest.reactions.createForIssueComment": { data: { id: SEEN_ID } },
+    ...responses,
+  });
+}
+
+function reactions(octokit) {
+  return octokit.calls.filter((c) => c.method === "rest.reactions.createForIssueComment");
 }
 
 // ---------------------------------------------------------------------------
@@ -135,6 +148,115 @@ test("bot comments are ignored", async (t) => {
 });
 
 // ---------------------------------------------------------------------------
+// pull_request_review_comment.created
+// ---------------------------------------------------------------------------
+
+function reviewCommentPayload({ prAuthor = "someone-else", author = "david", type = "User", body, number = 30, inReplyTo } = {}) {
+  return {
+    repository: { name: "svc" },
+    pull_request: { number, user: { login: prAuthor } },
+    comment: { id: 909, user: { login: author, type }, body, in_reply_to_id: inReplyTo },
+  };
+}
+
+test("@mention in an inline review comment dispatches a mention event", async (t) => {
+  const octokit = makeOctokit();
+  await fire(t, {
+    event: "pull_request_review_comment.created",
+    octokit,
+    payload: reviewCommentPayload({ body: "@dusty remember what Jim said" }),
+  });
+  const calls = dispatches(octokit);
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].args.inputs.event, "mention");
+  assert.equal(calls[0].args.inputs.pr, "30");
+  assert.equal(calls[0].args.inputs.actor, "david");
+  assert.equal(calls[0].args.inputs.body, "@dusty remember what Jim said");
+});
+
+test("an unmentioned inline review comment on a Dusty PR wakes nothing", async (t) => {
+  const octokit = makeOctokit();
+  await fire(t, {
+    event: "pull_request_review_comment.created",
+    octokit,
+    payload: reviewCommentPayload({ prAuthor: "dusty-the-robot[bot]", body: "agreed, nice catch" }),
+  });
+  assert.equal(dispatches(octokit).length, 0);
+});
+
+test("an inline review comment from a bot is ignored", async (t) => {
+  const octokit = makeOctokit();
+  await fire(t, {
+    event: "pull_request_review_comment.created",
+    octokit,
+    payload: reviewCommentPayload({ author: "copilot[bot]", type: "Bot", body: "cc @dusty" }),
+  });
+  assert.equal(dispatches(octokit).length, 0);
+});
+
+test("an inline review comment from an ignored user is dropped", async (t) => {
+  const octokit = makeOctokit();
+  await fire(t, {
+    event: "pull_request_review_comment.created",
+    octokit,
+    payload: reviewCommentPayload({ author: "healthengine-sre", body: "cc @dusty" }),
+  });
+  assert.equal(dispatches(octokit).length, 0);
+});
+
+test("an inline review comment is acked on the review-comment endpoint", async (t) => {
+  const octokit = makeOctokit({
+    "rest.reactions.createForPullRequestReviewComment": { data: { id: SEEN_ID } },
+  });
+  await fire(t, {
+    event: "pull_request_review_comment.created",
+    octokit,
+    payload: reviewCommentPayload({ body: "@dusty take a look" }),
+  });
+  const seen = octokit.calls.filter((c) => c.method === "rest.reactions.createForPullRequestReviewComment");
+  assert.equal(seen.length, 2); // 👀 then 👍
+  assert.deepEqual(seen.map((c) => c.args.content), ["eyes", "+1"]);
+  assert.equal(seen[0].args.comment_id, 909);
+  const cleared = octokit.calls.filter((c) => c.method === "rest.reactions.deleteForPullRequestComment");
+  assert.equal(cleared.length, 1);
+  assert.equal(cleared[0].args.reaction_id, SEEN_ID);
+  assert.equal(reactions(octokit).length, 0); // never the issue-comment endpoint
+});
+
+test("a reply on a thread Dusty opened wakes nothing without a mention", async (t) => {
+  const octokit = makeOctokit();
+  await fire(t, {
+    event: "pull_request_review_comment.created",
+    octokit,
+    payload: reviewCommentPayload({ body: "surprised this is an issue at all", inReplyTo: 4012708466 }),
+  });
+  assert.equal(dispatches(octokit).length, 0);
+  assert.equal(octokit.calls.filter((c) => c.method === "rest.pulls.getReviewComment").length, 0);
+});
+
+test("a mention on a reply dispatches a mention event", async (t) => {
+  const octokit = makeOctokit();
+  await fire(t, {
+    event: "pull_request_review_comment.created",
+    octokit,
+    payload: reviewCommentPayload({ body: "@dusty remember this", inReplyTo: 4012708466 }),
+  });
+  const calls = dispatches(octokit);
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].args.inputs.event, "mention");
+});
+
+test("Dusty's own reply on its own thread wakes nothing", async (t) => {
+  const octokit = makeOctokit();
+  await fire(t, {
+    event: "pull_request_review_comment.created",
+    octokit,
+    payload: reviewCommentPayload({ author: "dusty-the-robot[bot]", body: "@dusty and another thing", inReplyTo: 4012708466 }),
+  });
+  assert.equal(dispatches(octokit).length, 0);
+});
+
+// ---------------------------------------------------------------------------
 // status
 // ---------------------------------------------------------------------------
 
@@ -213,4 +335,140 @@ test("an edited review dispatches too (Copilot never emits submitted)", async (t
   const calls = dispatches(octokit);
   assert.equal(calls.length, 1);
   assert.equal(calls[0].args.inputs.actor, "Copilot");
+});
+
+// ---------------------------------------------------------------------------
+// 👀 → 👍 acknowledgements
+// ---------------------------------------------------------------------------
+
+test("a comment that wakes Dusty is 👀 on arrival and 👍 once the dispatch lands", async (t) => {
+  const octokit = ackingOctokit();
+  await fire(t, {
+    event: "issue_comment.created",
+    octokit,
+    payload: {
+      repository: { name: "svc" },
+      issue: { number: 30, pull_request: {}, user: { login: "dusty-the-robot[bot]" } },
+      comment: { id: 900, user: { login: "david", type: "User" }, body: "nit here" },
+    },
+  });
+  assert.equal(dispatches(octokit).length, 1);
+  assert.deepEqual(
+    reactions(octokit).map((c) => [c.args.comment_id, c.args.content]),
+    [[900, "eyes"], [900, "+1"]],
+  );
+
+  // The 👀 comes down only after the 👍 is up.
+  const removals = octokit.calls.filter((c) => c.method === "rest.reactions.deleteForIssueComment");
+  assert.equal(removals.length, 1);
+  assert.equal(removals[0].args.reaction_id, SEEN_ID);
+  assert.ok(octokit.calls.indexOf(removals[0]) > octokit.calls.indexOf(reactions(octokit)[1]));
+});
+
+test("the 👀 goes up before the debounce, not after the dispatch", async (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  const octokit = ackingOctokit();
+  const { app, dispatch } = makeApp();
+  register(app);
+  await dispatch(
+    "issue_comment.created",
+    makeContext({
+      octokit,
+      config: agentConfig(),
+      repo: "early",
+      payload: {
+        repository: { name: "early" },
+        issue: { number: 33, pull_request: {}, user: { login: "dusty-the-robot[bot]" } },
+        comment: { id: 940, user: { login: "david", type: "User" }, body: "nit" },
+      },
+    }),
+  );
+  for (let i = 0; i < 5; i++) await Promise.resolve();
+
+  // Debounce still pending: seen, but nothing queued.
+  assert.equal(dispatches(octokit).length, 0);
+  assert.deepEqual(reactions(octokit).map((c) => c.args.content), ["eyes"]);
+});
+
+test("a failed dispatch leaves the 👀 standing and no 👍", async (t) => {
+  const octokit = ackingOctokit({
+    "rest.actions.createWorkflowDispatch": () => {
+      throw Object.assign(new Error("nope"), { status: 404 });
+    },
+  });
+  const errors = t.mock.method(console, "error", () => {});
+  await fire(t, {
+    event: "issue_comment.created",
+    octokit,
+    payload: {
+      repository: { name: "svc" },
+      issue: { number: 31, pull_request: {}, user: { login: "dusty-the-robot[bot]" } },
+      comment: { id: 901, user: { login: "david", type: "User" }, body: "nit here" },
+    },
+  });
+  assert.deepEqual(reactions(octokit).map((c) => c.args.content), ["eyes"]);
+  assert.equal(octokit.calls.filter((c) => c.method === "rest.reactions.deleteForIssueComment").length, 0);
+  assert.equal(errors.mock.callCount(), 1);
+});
+
+test("every comment in a debounced burst is acknowledged", async (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  const octokit = ackingOctokit();
+  const { app, dispatch } = makeApp();
+  register(app);
+  for (const id of [910, 911]) {
+    await dispatch(
+      "issue_comment.created",
+      makeContext({
+        octokit,
+        config: agentConfig(),
+        repo: "burst",
+        payload: {
+          repository: { name: "burst" },
+          issue: { number: 32, pull_request: {}, user: { login: "dusty-the-robot[bot]" } },
+          comment: { id, user: { login: "david", type: "User" }, body: "nit" },
+        },
+      }),
+    );
+  }
+  t.mock.timers.tick(46_000);
+  for (let i = 0; i < 20; i++) await Promise.resolve();
+
+  assert.equal(dispatches(octokit).length, 1); // one wake
+  assert.deepEqual(
+    reactions(octokit).map((c) => [c.args.comment_id, c.args.content]),
+    [[910, "eyes"], [911, "eyes"], [910, "+1"], [911, "+1"]],
+  );
+});
+
+test("a human reply on an issue in Dusty's own repo goes straight to 👍", async (t) => {
+  const octokit = ackingOctokit();
+  await fire(t, {
+    event: "issue_comment.created",
+    octokit,
+    repo: "dusty",
+    payload: {
+      repository: { name: "dusty" },
+      issue: { number: 149, state: "open", user: { login: "dusty-the-robot[bot]" } },
+      comment: { id: 920, user: { login: "david", type: "User" }, body: "and now the other thing" },
+    },
+  });
+  assert.equal(dispatches(octokit).length, 0);
+  assert.deepEqual(reactions(octokit).map((c) => c.args), [
+    { owner: "acme", repo: "dusty", comment_id: 920, content: "+1" },
+  ]);
+});
+
+test("an issue comment outside Dusty's own repo is left alone", async (t) => {
+  const octokit = ackingOctokit();
+  await fire(t, {
+    event: "issue_comment.created",
+    octokit,
+    payload: {
+      repository: { name: "svc" },
+      issue: { number: 40, state: "open", user: { login: "david" } },
+      comment: { id: 930, user: { login: "david", type: "User" }, body: "unrelated issue chatter" },
+    },
+  });
+  assert.equal(octokit.calls.length, 0);
 });
