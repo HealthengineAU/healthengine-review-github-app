@@ -110,14 +110,24 @@ test("auto-trigger: ai_review.skip_authors replaces the default skip list", asyn
   assert.equal(skippedOctokit.calls.length, 0);
 });
 
-test("auto-trigger: the skip-ai-review label is respected", async (t) => {
+test("auto-trigger: the configured skip label is respected", async (t) => {
+  const octokit = makeOctokit();
+  await dispatchAutoTrigger(t, {
+    octokit,
+    config: fakeConfig({ ai_review: { skip_label: "skip-ai-review" } }),
+    payload: makePayload({ labels: [{ name: "skip-ai-review" }] }),
+  });
+  assert.equal(octokit.calls.length, 0);
+});
+
+test("auto-trigger: a label is ignored when no skip_label is configured", async (t) => {
   const octokit = makeOctokit();
   await dispatchAutoTrigger(t, {
     octokit,
     config: fakeConfig(),
     payload: makePayload({ labels: [{ name: "skip-ai-review" }] }),
   });
-  assert.equal(octokit.calls.length, 0);
+  assert.equal(countCalls(octokit, "rest.pulls.requestReviewers"), 1);
 });
 
 // ---------------------------------------------------------------------------
@@ -413,4 +423,85 @@ test("auto-trigger: ready_for_review also summons", async (t) => {
     payload: makePayload(),
   });
   assert.equal(countCalls(octokit, "rest.pulls.requestReviewers"), 1);
+});
+
+// ---------------------------------------------------------------------------
+// ai_review.provider_groups: routing by diff size
+// ---------------------------------------------------------------------------
+
+// Both providers are enabled, so the pick is only deterministic because the
+// bands narrow it: copilot is requested as a reviewer, Auggie is summoned by
+// comment — the two are trivially distinguishable.
+function groupedConfig(provider_groups) {
+  return fakeConfig({
+    providers: ["augment", "copilot"],
+    ai_review: { provider_groups },
+  });
+}
+
+const SIZE_BANDS = [
+  { max_diff_size: 99, providers: ["copilot"] },
+  { min_diff_size: 100, providers: ["augment"] },
+];
+
+test("auto-trigger: a small PR is routed to its band's provider", async (t) => {
+  const octokit = makeOctokit();
+  await dispatchAutoTrigger(t, {
+    octokit,
+    config: groupedConfig(SIZE_BANDS),
+    payload: makePayload({ additions: 40, deletions: 9 }),
+  });
+  assert.equal(countCalls(octokit, "rest.pulls.requestReviewers"), 1);
+  assert.equal(countCalls(octokit, "rest.issues.createComment"), 0);
+});
+
+test("auto-trigger: a large PR is routed to its band's provider", async (t) => {
+  const octokit = makeOctokit();
+  await dispatchAutoTrigger(t, {
+    octokit,
+    config: groupedConfig(SIZE_BANDS),
+    payload: makePayload({ additions: 90, deletions: 90 }),
+  });
+  assert.equal(countCalls(octokit, "rest.pulls.requestReviewers"), 0);
+  assert.equal(countCalls(octokit, "rest.issues.createComment"), 1);
+});
+
+test("auto-trigger: a band naming only disabled providers falls back to the enabled pool", async (t) => {
+  const octokit = makeOctokit();
+  await dispatchAutoTrigger(t, {
+    octokit,
+    config: fakeConfig({
+      providers: ["copilot"],
+      ai_review: { provider_groups: [{ min_diff_size: 100, providers: ["augment"] }] },
+    }),
+    payload: makePayload({ additions: 200, deletions: 0 }),
+  });
+  assert.equal(countCalls(octokit, "rest.pulls.requestReviewers"), 1);
+});
+
+const LINES_ADDED_BANDS = [
+  { min_lines_added: 80, max_lines_added: 2000, providers: ["augment"] },
+  { providers: ["copilot"] },
+];
+
+test("auto-trigger: a delete-heavy PR is routed by lines added, not diff size", async (t) => {
+  const octokit = makeOctokit();
+  await dispatchAutoTrigger(t, {
+    octokit,
+    config: groupedConfig(LINES_ADDED_BANDS),
+    payload: makePayload({ additions: 4, deletions: 1500 }),
+  });
+  assert.equal(countCalls(octokit, "rest.pulls.requestReviewers"), 1);
+  assert.equal(countCalls(octokit, "rest.issues.createComment"), 0);
+});
+
+test("auto-trigger: a PR inside the lines-added band is routed to Auggie", async (t) => {
+  const octokit = makeOctokit();
+  await dispatchAutoTrigger(t, {
+    octokit,
+    config: groupedConfig(LINES_ADDED_BANDS),
+    payload: makePayload({ additions: 120, deletions: 30 }),
+  });
+  assert.equal(countCalls(octokit, "rest.pulls.requestReviewers"), 0);
+  assert.equal(countCalls(octokit, "rest.issues.createComment"), 1);
 });

@@ -5,8 +5,12 @@ import {
   KNOWN_PROVIDERS,
   normalizeAiReview,
   normalizeBotPrHumanApprovers,
+  normalizeProviderGroups,
+  normalizeIssueLinks,
+  normalizeIssueLinkRules,
   normalizeProviders,
   normalizeSkipAuthors,
+  normalizeStaleDetection,
   loadAiReviewConfig,
 } from "../lib/config.js";
 import { matchesFilterPatterns } from "../lib/filter-patterns.js";
@@ -185,6 +189,25 @@ test("loadAiReviewConfig: ai_review.skip_authors [] disables the skip entirely",
   assert.equal(config.isAuthorSkipped("dependabot[bot]"), false);
 });
 
+test("loadAiReviewConfig: no skip label unless ai_review.skip_label names one", async () => {
+  const ctx = makeContext({ configValue: null });
+  const config = await loadAiReviewConfig(ctx);
+  assert.equal(config.aiReview.skipLabel, null);
+  assert.equal(config.isSkipLabel("skip-ai-review"), false);
+  assert.equal(config.hasSkipLabel([{ name: "skip-ai-review" }]), false);
+  assert.equal(config.hasSkipLabel(undefined), false);
+});
+
+test("loadAiReviewConfig: ai_review.skip_label names the waiving label", async () => {
+  const ctx = makeContext({ configValue: { ai_review: { skip_label: "  skip-ai-review  " } } });
+  const config = await loadAiReviewConfig(ctx);
+  assert.equal(config.aiReview.skipLabel, "skip-ai-review");
+  assert.ok(config.isSkipLabel("skip-ai-review"));
+  assert.equal(config.isSkipLabel("other"), false);
+  assert.ok(config.hasSkipLabel([{ name: "bug" }, { name: "skip-ai-review" }]));
+  assert.equal(config.hasSkipLabel([{ name: "bug" }]), false);
+});
+
 // ---------------------------------------------------------------------------
 // normalizeAiReview
 // ---------------------------------------------------------------------------
@@ -203,7 +226,7 @@ test("normalizeAiReview: defaults for missing or junk values", () => {
     // …while repositories and authors default to match-everything.
     assert.ok(matchesFilterPatterns(result.repositories, "any-repo"));
     assert.ok(matchesFilterPatterns(result.authors, "anyone"));
-    assert.equal(result.minDiffSize, 0);
+    assert.equal(result.minDiffSize, 10);
     assert.equal(result.maxDiffSize, 2000);
   }
 });
@@ -263,12 +286,13 @@ test("normalizeAiReview: diff bounds accept valid numbers, including 0", () => {
   assert.equal(result.minDiffSize, 5);
   assert.equal(result.maxDiffSize, 100);
   assert.equal(normalizeAiReview({ max_diff_size: 0 }).maxDiffSize, 0);
+  assert.equal(normalizeAiReview({ min_diff_size: 0 }).minDiffSize, 0);
 });
 
 test("normalizeAiReview: invalid diff bounds fall back to defaults", () => {
   for (const bad of ["500", -1, NaN, Infinity, {}, []]) {
     const result = normalizeAiReview({ min_diff_size: bad, max_diff_size: bad });
-    assert.equal(result.minDiffSize, 0, `min for ${String(bad)}`);
+    assert.equal(result.minDiffSize, 10, `min for ${String(bad)}`);
     assert.equal(result.maxDiffSize, 2000, `max for ${String(bad)}`);
   }
 });
@@ -312,6 +336,57 @@ test("normalizeAiReview: exposes botPrHumanApprovers with defaults", () => {
   assert.deepEqual([...result.botPrHumanApprovers.exclude], ["dependabot[bot]"]);
 });
 
+// ---------------------------------------------------------------------------
+// normalizeStaleDetection
+// ---------------------------------------------------------------------------
+
+test("normalizeStaleDetection: on, with defaults for missing or junk values", () => {
+  for (const raw of [undefined, null, {}, "nonsense", 42, [], { enabled: "false" }]) {
+    const result = normalizeStaleDetection(raw);
+    assert.equal(result.enabled, true, JSON.stringify(raw));
+    assert.equal(result.autoInvite, true, JSON.stringify(raw));
+    assert.equal(result.percent, 10, JSON.stringify(raw));
+    assert.equal(result.minLines, 10, JSON.stringify(raw));
+    assert.equal(matchesFilterPatterns(result.ignorePaths, "composer.lock"), true);
+    assert.equal(matchesFilterPatterns(result.ignorePaths, "web/package-lock.json"), true);
+    assert.equal(matchesFilterPatterns(result.ignorePaths, "src/__snapshots__/a.test.js.snap"), true);
+    assert.equal(matchesFilterPatterns(result.ignorePaths, "src/app.js"), false);
+  }
+});
+
+test("normalizeStaleDetection: accepts valid thresholds, including 0", () => {
+  const result = normalizeStaleDetection({ enabled: false, percent: 0, min_lines: 10 });
+  assert.equal(result.enabled, false);
+  assert.equal(result.percent, 0);
+  assert.equal(result.minLines, 10);
+});
+
+test("normalizeStaleDetection: invalid thresholds fall back to defaults", () => {
+  for (const bad of ["5", -1, NaN, Infinity, {}, null]) {
+    const result = normalizeStaleDetection({ percent: bad, min_lines: bad });
+    assert.equal(result.percent, 10, String(bad));
+    assert.equal(result.minLines, 10, String(bad));
+  }
+});
+
+test("normalizeStaleDetection: auto_invite is on unless explicitly false", () => {
+  assert.equal(normalizeStaleDetection({ auto_invite: false }).autoInvite, false);
+  assert.equal(normalizeStaleDetection({ auto_invite: "no" }).autoInvite, true);
+});
+
+test("normalizeStaleDetection: ignore_paths replaces the default; [] ignores nothing", () => {
+  const custom = normalizeStaleDetection({ ignore_paths: [" **/generated/** ", "", 42] });
+  assert.equal(matchesFilterPatterns(custom.ignorePaths, "web/generated/types.ts"), true);
+  assert.equal(matchesFilterPatterns(custom.ignorePaths, "composer.lock"), false);
+
+  assert.equal(normalizeStaleDetection({ ignore_paths: [] }).ignorePaths.length, 0);
+});
+
+test("normalizeAiReview: exposes staleDetection, enabled by default", () => {
+  assert.equal(normalizeAiReview({}).staleDetection.enabled, true);
+  assert.equal(normalizeAiReview({ stale_detection: { enabled: false } }).staleDetection.enabled, false);
+});
+
 test("loadAiReviewConfig: exposes ai_review.bot_pr_human_approvers", async () => {
   const ctx = makeContext({
     configValue: {
@@ -341,4 +416,178 @@ test("loadAiReviewConfig: aiReview defaults apply when the key is absent", async
   const config = await loadAiReviewConfig(ctx);
   assert.equal(config.aiReview.automatic, false);
   assert.equal(config.aiReview.maxDiffSize, 2000);
+});
+
+// ---------------------------------------------------------------------------
+// normalizeProviderGroups / providersForSize
+// ---------------------------------------------------------------------------
+
+test("normalizeProviderGroups: returns [] for non-arrays", () => {
+  assert.deepEqual(normalizeProviderGroups(undefined), []);
+  assert.deepEqual(normalizeProviderGroups(null), []);
+  assert.deepEqual(normalizeProviderGroups({ providers: ["copilot"] }), []);
+});
+
+test("normalizeProviderGroups: defaults the open ends of a band", () => {
+  const [small, large] = normalizeProviderGroups([
+    { max_diff_size: 99, providers: ["copilot"] },
+    { min_diff_size: 100, providers: ["augment"] },
+  ]);
+  assert.equal(small.minDiffSize, 0);
+  assert.equal(small.maxDiffSize, 99);
+  assert.deepEqual([...small.providers], ["copilot"]);
+  assert.equal(large.minDiffSize, 100);
+  assert.equal(large.maxDiffSize, Infinity);
+  assert.deepEqual([...large.providers], ["augment"]);
+});
+
+test("normalizeProviderGroups: drops bands without usable providers", () => {
+  const groups = normalizeProviderGroups([
+    { providers: ["bogus"] },
+    { providers: [] },
+    {},
+    { providers: ["copilot", "Augment"] },
+  ]);
+  assert.equal(groups.length, 1);
+  assert.deepEqual([...groups[0].providers].sort(), ["augment", "copilot"]);
+});
+
+test("providersForSize: first matching band wins", async () => {
+  const ctx = makeContext({
+    configValue: {
+      providers: ["augment", "copilot"],
+      ai_review: {
+        provider_groups: [
+          { max_diff_size: 99, providers: ["copilot"] },
+          { min_diff_size: 100, providers: ["augment"] },
+        ],
+      },
+    },
+  });
+  const config = await loadAiReviewConfig(ctx);
+  assert.deepEqual([...config.providersForSize({ diffSize: 10 })], ["copilot"]);
+  assert.deepEqual([...config.providersForSize({ diffSize: 99 })], ["copilot"]);
+  assert.deepEqual([...config.providersForSize({ diffSize: 100 })], ["augment"]);
+  assert.deepEqual([...config.providersForSize({ diffSize: 5000 })], ["augment"]);
+});
+
+test("providersForSize: null when no band matches, none configured, or the size is unknown", async () => {
+  const ctx = makeContext({
+    configValue: {
+      providers: ["augment", "copilot"],
+      ai_review: { provider_groups: [{ min_diff_size: 100, providers: ["augment"] }] },
+    },
+  });
+  const config = await loadAiReviewConfig(ctx);
+  assert.equal(config.providersForSize({ diffSize: 50 }), null);
+  assert.equal(config.providersForSize({ diffSize: undefined }), null);
+  assert.equal(config.providersForSize({ diffSize: NaN }), null);
+
+  const noGroups = await loadAiReviewConfig(makeContext({ configValue: { providers: ["copilot"] } }));
+  assert.equal(noGroups.providersForSize({ diffSize: 10 }), null);
+});
+
+test("providersForSize: a band never enables a provider the top level disabled", async () => {
+  const ctx = makeContext({
+    configValue: {
+      providers: ["copilot"],
+      ai_review: {
+        provider_groups: [
+          { max_diff_size: 99, providers: ["copilot", "augment"] },
+          { min_diff_size: 100, providers: ["augment"] },
+        ],
+      },
+    },
+  });
+  const config = await loadAiReviewConfig(ctx);
+  assert.deepEqual([...config.providersForSize({ diffSize: 10 })], ["copilot"]);
+  // The large band is augment-only and augment is off → no restriction.
+  assert.equal(config.providersForSize({ diffSize: 500 }), null);
+});
+
+test("providersForSize: lines-added bounds band on additions only", async () => {
+  const ctx = makeContext({
+    configValue: {
+      providers: ["augment", "copilot"],
+      ai_review: {
+        provider_groups: [
+          { min_lines_added: 80, max_lines_added: 2000, providers: ["augment"] },
+          { providers: ["copilot"] },
+        ],
+      },
+    },
+  });
+  const config = await loadAiReviewConfig(ctx);
+  assert.deepEqual([...config.providersForSize({ diffSize: 80, linesAdded: 80 })], ["augment"]);
+  assert.deepEqual([...config.providersForSize({ diffSize: 2000, linesAdded: 2000 })], ["augment"]);
+  assert.deepEqual([...config.providersForSize({ diffSize: 1700, linesAdded: 5 })], ["copilot"]);
+  assert.deepEqual([...config.providersForSize({ diffSize: 79, linesAdded: 79 })], ["copilot"]);
+  assert.deepEqual([...config.providersForSize({ diffSize: 5000, linesAdded: 4000 })], ["copilot"]);
+});
+
+test("providersForSize: a band combining diff size and lines added must satisfy both", async () => {
+  const ctx = makeContext({
+    configValue: {
+      providers: ["augment", "copilot"],
+      ai_review: {
+        provider_groups: [
+          { min_diff_size: 100, min_lines_added: 80, providers: ["augment"] },
+          { providers: ["copilot"] },
+        ],
+      },
+    },
+  });
+  const config = await loadAiReviewConfig(ctx);
+  assert.deepEqual([...config.providersForSize({ diffSize: 120, linesAdded: 90 })], ["augment"]);
+  assert.deepEqual([...config.providersForSize({ diffSize: 120, linesAdded: 20 })], ["copilot"]);
+  assert.deepEqual([...config.providersForSize({ diffSize: 90, linesAdded: 90 })], ["copilot"]);
+});
+
+test("normalizeProviderGroups: omitted bounds default to 0 and Infinity", () => {
+  const [group] = normalizeProviderGroups([{ providers: ["copilot"] }]);
+  assert.equal(group.minDiffSize, 0);
+  assert.equal(group.maxDiffSize, Infinity);
+  assert.equal(group.minLinesAdded, 0);
+  assert.equal(group.maxLinesAdded, Infinity);
+});
+
+// ---------------------------------------------------------------------------
+// normalizeIssueLinks
+// ---------------------------------------------------------------------------
+
+test("normalizeIssueLinks: dormant by default", () => {
+  const links = normalizeIssueLinks(undefined);
+  assert.equal(links.automatic, false);
+  assert.deepEqual(links.rules, []);
+  assert.equal(matchesFilterPatterns(links.repositories, "any-repo"), true);
+});
+
+test("normalizeIssueLinkRules: keys take filter patterns, label defaults", () => {
+  const [rule] = normalizeIssueLinkRules([
+    { keys: ["ABC", "XY"], url: "https://example.test/browse/$KEY-$NUMBER" },
+  ]);
+  assert.equal(rule.label, "$KEY-$NUMBER");
+  assert.equal(rule.url, "https://example.test/browse/$KEY-$NUMBER");
+  assert.equal(matchesFilterPatterns(rule.keys, "abc"), true);
+  assert.equal(matchesFilterPatterns(rule.keys, "node"), false);
+});
+
+test("normalizeIssueLinkRules: rules without usable keys or url are dropped", () => {
+  assert.deepEqual(normalizeIssueLinkRules(undefined), []);
+  assert.deepEqual(normalizeIssueLinkRules("nope"), []);
+  assert.deepEqual(normalizeIssueLinkRules([{ keys: ["ABC"] }]), []);
+  assert.deepEqual(normalizeIssueLinkRules([{ url: "https://example.test/$NUMBER" }]), []);
+  assert.equal(normalizeIssueLinkRules([{ keys: [" "], url: " " }]).length, 0);
+});
+
+test("normalizeIssueLinks: repositories filter the rollout", () => {
+  const links = normalizeIssueLinks({
+    automatic: true,
+    repositories: ["*", "!legacy-monolith"],
+    rules: [{ keys: ["ABC"], url: "https://example.test/$KEY-$NUMBER" }],
+  });
+  assert.equal(links.automatic, true);
+  assert.equal(links.rules.length, 1);
+  assert.equal(matchesFilterPatterns(links.repositories, "some-repo"), true);
+  assert.equal(matchesFilterPatterns(links.repositories, "legacy-monolith"), false);
 });
