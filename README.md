@@ -75,7 +75,7 @@
     (picked by PR number; any of the five works, and the labels must exist in the repo)
   - Adding one stamps the tool's PR comment with the labeler and the comment's
     fingerprint, and flips the pending statuses to `Approved by <name> — …`. Anyone
-    able to label the PR can approve; a label added before the tool has commented is removed
+    able to label the PR can approve; a label on a PR with no fingerprinted comment does nothing
   - Later builds stay approved while their fingerprint matches the stamp; a different
     fingerprint on any status removes the labels and stamps and puts the statuses back to pending
   - Removing the label by hand does the same

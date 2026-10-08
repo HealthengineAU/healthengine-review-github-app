@@ -163,11 +163,10 @@ test("pull_request.labeled: falls back to the login without a display name", asy
   assert.ok(t.calls("rest.issues.updateComment")[0].body.endsWith(STAMP("cb4f8904", "reececomo")));
 });
 
-test("pull_request.labeled: before the tool has commented, the label is removed", async () => {
-  const t = setup({ comments: [{ id: 3, body: "hi" }] });
+test("pull_request.labeled: nothing happens without a fingerprinted tool comment", async () => {
+  const t = setup({ comments: [{ id: 3, body: "hi" }, { id: 4, body: "<!-- found-pixel-comment -->\n### UI Review" }] });
   await t.dispatch("pull_request.labeled", t.context(labelPayload("sublime")));
-  assert.deepEqual(t.calls("rest.issues.removeLabel").map((a) => a.name), ["sublime"]);
-  assert.equal(t.calls("rest.repos.createCommitStatus").length, 0);
+  assert.deepEqual(t.octokit.calls.map((c) => c.method), ["paginate:rest.issues.listComments"]);
 });
 
 test("pull_request.labeled: other labels are ignored", async () => {
