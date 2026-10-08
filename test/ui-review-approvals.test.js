@@ -20,9 +20,9 @@ const {
 } = await import("../lib/ui-review-approvals.js");
 
 test("suggestedLabel is stable per PR number", () => {
-  assert.equal(suggestedLabel(0), "gorgeous");
-  assert.equal(suggestedLabel(4), "sublime");
-  assert.equal(suggestedLabel(57), "splendid");
+  assert.equal(suggestedLabel(0), "gorgeous!");
+  assert.equal(suggestedLabel(4), "sublime!");
+  assert.equal(suggestedLabel(57), "splendid!");
 });
 
 test("isUiReviewStatus matches the bare and suited contexts only", () => {
@@ -71,10 +71,10 @@ test("renderStamp / parseStamp tolerate a missing name", () => {
 
 test("descriptions keep the tool's text under any prefix and stay within 140 chars", () => {
   assert.equal(baseDescription("3 modified"), "3 modified");
-  assert.equal(baseDescription('Label as "sublime" to approve - 3 modified'), "3 modified");
+  assert.equal(baseDescription('Label as "sublime!" to approve - 3 modified'), "3 modified");
   assert.equal(baseDescription("✓ Reviewed by Reece Como - 3 modified"), "3 modified");
-  assert.equal(pendingDescription("sublime", "✓ Reviewed by X - 1 added, 2 modified"), 'Label as "sublime" to approve - 1 added, 2 modified');
-  assert.equal(approvedDescription("Reece Como", 'Label as "sublime" to approve - 3 modified'), "✓ Reviewed by Reece Como - 3 modified");
+  assert.equal(pendingDescription("sublime!", "✓ Reviewed by X - 1 added, 2 modified"), 'Label as "sublime!" to approve - 1 added, 2 modified');
+  assert.equal(approvedDescription("Reece Como", 'Label as "sublime!" to approve - 3 modified'), "✓ Reviewed by Reece Como - 3 modified");
   const long = approvedDescription("A".repeat(100), "B".repeat(100));
   assert.equal(long.length, 140);
   assert.ok(long.endsWith("…"));
