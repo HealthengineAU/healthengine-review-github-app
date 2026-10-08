@@ -70,12 +70,12 @@
 
 - Approves UI changes by label (`UI Review` / `UI Review (<suite>)` statuses from
   found-pixel and visreg-images, when those post `pending` with `fp=` in the URL):
-  - A pending status with no approval label is rewritten to `Add "<label>" label — …`,
+  - A pending status with no approval label is rewritten to `Label as "<label>" to approve — …`,
     suggesting one of `gorgeous`, `magnificent`, `splendid`, `stunning`, `sublime`
     (picked by PR number; any of the five works, and the labels must exist in the repo)
   - Adding one stamps the tool's PR comment with the labeler and the comment's
     fingerprint (signed with the app's webhook secret, so a hand-written stamp
-    counts for nothing), and flips the pending statuses to `Approved by <name> — …`.
+    counts for nothing), and flips the pending statuses to `✓ Reviewed by <name> — …`.
     Anyone able to label the PR can approve; a label on a PR with no fingerprinted comment does nothing
   - Later builds stay approved while their fingerprint matches the stamp; a different
     fingerprint on any status removes the labels and stamps and puts the statuses back to pending
