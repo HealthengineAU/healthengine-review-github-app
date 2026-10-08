@@ -224,6 +224,7 @@ test("pull_request.labeled: other labels are ignored", async () => {
 
 test("pull_request.unlabeled: a human removing the last approval label reverts and unstamps", async () => {
   const t = setup({
+    current: pr({ labels: [] }),
     comments: [toolComment(1, "cb4f8904", { stampFp: "cb4f8904" })],
     statuses: [status({ state: "success", description: "✓ Reviewed by Reece Como - 3 modified" })],
   });
@@ -232,9 +233,21 @@ test("pull_request.unlabeled: a human removing the last approval label reverts a
   assert.deepEqual(t.posted(), [["UI Review", "pending", 'Label as "splendid" to approve - 3 modified', URL("cb4f8904")]]);
 });
 
+test("pull_request.unlabeled: the payload's label list is not trusted; the PR is re-read", async () => {
+  const t = setup({
+    current: pr({ labels: [] }),
+    comments: [toolComment(1, "cb4f8904", { stampFp: "cb4f8904" })],
+    statuses: [status({ state: "success", description: "✓ Reviewed by Reece Como - 3 modified" })],
+  });
+  await t.dispatch("pull_request.unlabeled", t.context(labelPayload("sublime", { labels: ["sublime"] })));
+  assert.deepEqual(t.posted().map((p) => p[1]), ["pending"]);
+});
+
 test("pull_request.unlabeled: ignored when another approval label remains or the app did it", async () => {
-  const t = setup();
-  await t.dispatch("pull_request.unlabeled", t.context(labelPayload("sublime", { labels: ["gorgeous"] })));
-  await t.dispatch("pull_request.unlabeled", t.context(labelPayload("sublime", { labels: [], type: "Bot" })));
-  assert.equal(t.octokit.calls.length, 0);
+  const t = setup({ current: pr({ labels: ["gorgeous"] }) });
+  await t.dispatch("pull_request.unlabeled", t.context(labelPayload("sublime", { labels: [] })));
+  assert.deepEqual(t.octokit.calls.map((c) => c.method), ["rest.pulls.get"]);
+  const u = setup();
+  await u.dispatch("pull_request.unlabeled", u.context(labelPayload("sublime", { labels: [], type: "Bot" })));
+  assert.equal(u.octokit.calls.length, 0);
 });
