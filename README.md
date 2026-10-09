@@ -68,18 +68,17 @@
     once the wake is queued. A comment on an issue in the agent's own repo —
     which it watches itself — goes straight to 👍. It means "received", not "done"
 
-- Approves UI changes by label (`UI Review` / `UI Review (<suite>)` statuses from
-  found-pixel and visreg-images, when those post `pending` with `fp=` in the URL):
-  - A pending status with no approval label is rewritten to `Label as "<label>" to approve - …`,
-    suggesting one of `gorgeous!`, `magnificent!`, `splendid!`, `stunning!`, `sublime!`
-    (picked by PR number; any of the five works, and the labels must exist in the repo)
-  - Adding one stamps the tool's PR comment with the labeler and the comment's
-    fingerprint (signed with the app's webhook secret, so a hand-written stamp
-    counts for nothing), and flips the pending statuses to `✓ Reviewed by <name> - …`.
-    Anyone able to label the PR can approve; a label on a PR with no fingerprinted comment does nothing
-  - Later builds stay approved while their fingerprint matches the stamp; a different
-    fingerprint on any status removes the labels and stamps and puts the statuses back to pending
-  - Removing the label by hand does the same
+- Approves UI changes by checkbox (`UI Review` / `UI Review (<suite>)` statuses from
+  found-pixel, when it posts `pending` with `fp=` in the URL):
+  - Adds an **Approve Changes** checkbox to the top of found-pixel's PR comment (the one with
+    the same fingerprint) and rewrites the status to `Approve in the PR comment - …`
+  - Ticking it rewrites the line to `~Approve Changes~ - Approved by @<login>`, stamps the
+    comment with the fingerprint, and flips the pending statuses with that fingerprint to
+    `✓ Reviewed by <name> - …`. Anyone able to edit the comment can approve
+  - found-pixel keeps the stamp when it rewrites the comment, so later builds with the same
+    fingerprint are approved again; a different fingerprint drops the stamp and asks again
+  - Unticking reverts the line to `**Approve Changes**`, removes the stamp and puts the
+    approved statuses back to pending
   - The app recognises its own statuses by their description prefix and acts only
     on the latest status for a context, so replayed or stale events are ignored
 - Starts incidents from Slack (`/incident`, see below):

@@ -70,6 +70,7 @@ export function makeOctokit(responses = {}) {
       issues: {
         listComments: tag("rest.issues.listComments"),
         createComment: record("rest.issues.createComment"),
+        getComment: record("rest.issues.getComment"),
         updateComment: record("rest.issues.updateComment"),
         removeLabel: record("rest.issues.removeLabel"),
       },

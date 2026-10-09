@@ -2,31 +2,34 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 
 import { makeApp, makeOctokit, makeContext } from "./helpers/mock-github.js";
-
-process.env.WEBHOOK_SECRET = "test-secret";
-const { register, signStamp } = await import("../lib/ui-review-approvals.js");
+import { register } from "../lib/ui-review-approvals.js";
 
 const SHA = "3897e0b2a142230837e29e68dc4b18a8d318166e";
 const URL = (fp) => `https://visreg.he0.io/?r=catalyst&b=feature-x${fp ? `&fp=${fp}` : ""}`;
-const STAMP = (id, fp, name = "Reece Como", sig = signStamp(id, fp)) =>
-  `<!-- ui-approved by=reececomo name="${name}" fp=${fp} sig=${sig} -->`;
+const STAMP = (fp, name = "Reece Como") => `<!-- ui-approved fp=${fp} by=reececomo name="${name}" -->`;
 
-const toolComment = (id, fp, { stampFp, forged = false, suite } = {}) => ({
+const LINES = {
+  prompt: "> - [ ] **Approve Changes** - ✅ Check this box to confirm UI change approved",
+  ticked: "> - [x] **Approve Changes** - ✅ Check this box to confirm UI change approved",
+  approved: (login = "reececomo") => `> - [x] ~Approve Changes~ - Approved by @${login}`,
+  unticked: "> - [ ] ~Approve Changes~ - Approved by @reececomo",
+  reverted: "> - [ ] **Approve Changes**",
+};
+
+const toolComment = (id, fp, { line = LINES.prompt, stampFp, suite } = {}) => ({
   id,
   body: [
     suite ? `<!-- visreg-comment:${suite} -->` : "<!-- found-pixel-comment -->",
     `<!-- ui-review fp=${fp} -->`,
-    "### 📘 UI Review",
-    ...(stampFp ? [STAMP(id, stampFp, "Reece Como", forged ? "0000000000000000" : undefined)] : []),
+    ...(line ? ["> [!Warning]", line, ""] : []),
+    "## 📘 UI Review",
+    ...(stampFp ? [STAMP(stampFp)] : []),
   ].join("\n"),
 });
+const rawComment = (id, fp, opts = {}) => toolComment(id, fp, { line: null, ...opts });
+const approvedComment = (id, fp, opts = {}) => toolComment(id, fp, { line: LINES.approved(), stampFp: fp, ...opts });
 
-const pr = ({ labels = [], number = 57, state = "open" } = {}) => ({
-  number,
-  state,
-  head: { sha: SHA },
-  labels: labels.map((name) => ({ name })),
-});
+const pr = ({ number = 57, state = "open" } = {}) => ({ number, state, head: { sha: SHA } });
 
 const status = ({ context = "UI Review", state = "pending", description = "3 modified", fp = "cb4f8904" } = {}) => ({
   context, state, description, target_url: URL(fp),
@@ -34,12 +37,13 @@ const status = ({ context = "UI Review", state = "pending", description = "3 mod
 
 const statusPayload = (overrides = {}) => ({ ...status(overrides), sha: SHA, repository: { name: "catalyst" } });
 
-function setup({ prs = [pr()], current, comments = [], statuses, user = { name: "Reece Como" } } = {}) {
+function setup({ prs = [pr()], current, comments = [], comment, statuses, user = { name: "Reece Como" } } = {}) {
   const { app, dispatch } = makeApp();
   register(app);
   const octokit = makeOctokit({
     "rest.repos.listPullRequestsAssociatedWithCommit": { data: prs },
     "rest.pulls.get": { data: current ?? prs[0] },
+    "rest.issues.getComment": { data: comment },
     "paginate:rest.issues.listComments": comments,
     "paginate:rest.repos.listCommitStatusesForRef": statuses,
     "rest.users.getByUsername": { data: user },
@@ -53,23 +57,18 @@ function setup({ prs = [pr()], current, comments = [], statuses, user = { name: 
 const onStatus = (t, overrides = {}) => t.dispatch("status", t.context(statusPayload(overrides)));
 const withEvent = (overrides = {}, others = []) => [status(overrides), ...others];
 
-test("status: pending without a label gets the suggested label text and keeps fp", async () => {
-  const t = setup({ statuses: withEvent() });
+test("status: pending without an approval adds the checkbox and the prompt, keeping fp", async () => {
+  const t = setup({ comments: [rawComment(1, "cb4f8904")], statuses: withEvent() });
   await onStatus(t);
-  assert.deepEqual(t.posted(), [["UI Review", "pending", 'Label as "splendid!" to approve - 3 modified', URL("cb4f8904")]]);
+  assert.deepEqual(t.calls("rest.issues.updateComment").map((a) => [a.comment_id, a.body]), [[1, toolComment(1, "cb4f8904").body]]);
+  assert.deepEqual(t.posted(), [["UI Review", "pending", "Approve in the PR comment - 3 modified", URL("cb4f8904")]]);
   assert.equal(t.calls("rest.repos.createCommitStatus")[0].sha, SHA);
 });
 
-test("status: success without a label is left alone", async () => {
-  const t = setup({ statuses: withEvent({ state: "success" }) });
-  await onStatus(t, { state: "success" });
-  assert.equal(t.posted().length, 0);
-});
-
-test("status: the app's own rewrites, statuses without fp, and other contexts are ignored", async () => {
+test("status: non-pending statuses, the app's own rewrites, statuses without fp, and other contexts are ignored", async () => {
   const t = setup({ statuses: withEvent() });
-  await onStatus(t, { description: 'Label as "splendid!" to approve - 3 modified' });
-  await onStatus(t, { description: "✓ Reviewed by Reece Como - 3 modified", state: "success" });
+  await onStatus(t, { state: "success" });
+  await onStatus(t, { description: "Approve in the PR comment - 3 modified" });
   await onStatus(t, { fp: null });
   await onStatus(t, { context: "AI Review" });
   assert.equal(t.octokit.calls.length, 0);
@@ -77,13 +76,12 @@ test("status: the app's own rewrites, statuses without fp, and other contexts ar
 
 test("status: a stale event (the context has moved on) is ignored", async () => {
   const t = setup({
-    prs: [pr({ labels: ["sublime!"] })],
-    comments: [toolComment(1, "cb4f8904", { stampFp: "cb4f8904" })],
+    comments: [rawComment(1, "cb4f8904", { stampFp: "cb4f8904" })],
     statuses: [status({ state: "error", description: "storybook-diff could not read this Storybook build", fp: null })],
   });
   await onStatus(t);
   assert.equal(t.posted().length, 0);
-  assert.equal(t.calls("rest.issues.removeLabel").length, 0);
+  assert.equal(t.calls("rest.issues.updateComment").length, 0);
 });
 
 test("status: no open PR at this head means nothing happens", async () => {
@@ -92,162 +90,125 @@ test("status: no open PR at this head means nothing happens", async () => {
   assert.equal(t.posted().length, 0);
 });
 
-test("status: a matching signed stamp carries the approval forward", async () => {
-  const t = setup({
-    prs: [pr({ labels: ["sublime!"] })],
-    comments: [toolComment(1, "cb4f8904", { stampFp: "cb4f8904" })],
-    statuses: withEvent(),
-  });
+test("status: a stamp for the same fingerprint carries the approval forward", async () => {
+  const t = setup({ comments: [rawComment(1, "cb4f8904", { stampFp: "cb4f8904" })], statuses: withEvent() });
   await onStatus(t);
+  assert.deepEqual(t.calls("rest.issues.updateComment").map((a) => a.body), [approvedComment(1, "cb4f8904").body]);
   assert.deepEqual(t.posted(), [["UI Review", "success", "✓ Reviewed by Reece Como - 3 modified", URL("cb4f8904")]]);
-  assert.equal(t.calls("rest.issues.removeLabel").length, 0);
 });
 
-test("status: a matching stamp on an already-successful status does nothing", async () => {
-  const t = setup({
-    prs: [pr({ labels: ["sublime!"] })],
-    comments: [toolComment(1, "cb4f8904", { stampFp: "cb4f8904" })],
-    statuses: withEvent({ state: "success" }),
-  });
-  await onStatus(t, { state: "success" });
-  assert.equal(t.posted().length, 0);
-});
-
-test("status: a forged stamp (bad signature) does not approve and clears the label", async () => {
-  const t = setup({
-    prs: [pr({ labels: ["sublime!"] })],
-    comments: [toolComment(1, "cb4f8904", { stampFp: "cb4f8904", forged: true })],
-    statuses: withEvent(),
-  });
+test("status: an already approved comment is left alone", async () => {
+  const t = setup({ comments: [approvedComment(1, "cb4f8904")], statuses: withEvent() });
   await onStatus(t);
-  assert.deepEqual(t.calls("rest.issues.removeLabel").map((a) => a.name), ["sublime!"]);
-  assert.deepEqual(t.posted(), [["UI Review", "pending", 'Label as "splendid!" to approve - 3 modified', URL("cb4f8904")]]);
+  assert.equal(t.calls("rest.issues.updateComment").length, 0);
+  assert.deepEqual(t.posted().map((p) => p[1]), ["success"]);
 });
 
-test("status: a different fingerprint clears every label and stamp and reverts approved suites", async () => {
-  const t = setup({
-    prs: [pr({ labels: ["sublime!", "gorgeous!", "bug"] })],
-    comments: [
-      toolComment(1, "11111111", { stampFp: "cb4f8904" }),
-      toolComment(2, "22222222", { stampFp: "22222222", suite: "admin" }),
-      { id: 3, body: "unrelated comment" },
-    ],
-    statuses: withEvent({ fp: "11111111" }, [
-      status({ context: "UI Review (admin)", state: "success", description: "✓ Reviewed by Reece Como - 1 added", fp: "22222222" }),
-      status({ context: "AI Review", state: "success", description: "Reviewed", fp: null }),
-    ]),
-  });
+test("status: a stamp for a different fingerprint is dropped and the prompt added", async () => {
+  const t = setup({ comments: [rawComment(1, "11111111", { stampFp: "cb4f8904" })], statuses: withEvent({ fp: "11111111" }) });
   await onStatus(t, { fp: "11111111" });
-
-  assert.deepEqual(t.calls("rest.issues.removeLabel").map((a) => a.name), ["sublime!", "gorgeous!"]);
-  assert.deepEqual(
-    t.calls("rest.issues.updateComment").map((a) => [a.comment_id, a.body.includes("ui-approved")]),
-    [[1, false], [2, false]],
-  );
-  assert.deepEqual(t.posted(), [
-    ["UI Review (admin)", "pending", 'Label as "splendid!" to approve - 1 added', URL("22222222")],
-    ["UI Review", "pending", 'Label as "splendid!" to approve - 3 modified', URL("11111111")],
-  ]);
-});
-
-test("status: only the newest status per context counts", async () => {
-  const t = setup({
-    prs: [pr({ labels: ["sublime!"] })],
-    comments: [toolComment(1, "cb4f8904", { stampFp: "cb4f8904" })],
-    statuses: [status(), status({ state: "error", description: "older", fp: null })],
-  });
-  await onStatus(t);
-  assert.equal(t.posted().length, 1);
-});
-
-const labelPayload = (name, { labels = [name], type = "User" } = {}) => ({
-  label: { name }, pull_request: pr({ labels }), sender: { login: "reececomo", type },
-});
-
-test("pull_request.labeled: stamps every tool comment and flips the pending statuses whose fp it covers", async () => {
-  const t = setup({
-    current: pr({ labels: ["gorgeous!"] }),
-    comments: [toolComment(1, "cb4f8904"), toolComment(2, "1a2b3c4d", { suite: "admin" }), { id: 3, body: "hi" }],
-    statuses: [
-      status({ description: 'Label as "splendid!" to approve - 3 modified' }),
-      status({ context: "UI Review (admin)", description: "1 added", fp: "1a2b3c4d" }),
-      status({ context: "UI Review (stale)", description: 'Label as "splendid!" to approve - 9 added', fp: "99999999" }),
-      status({ context: "UI Review (done)", state: "success", description: "No changes", fp: null }),
-      status({ context: "AI Review", description: "Requested", fp: null }),
-    ],
-  });
-  await t.dispatch("pull_request.labeled", t.context(labelPayload("gorgeous!")));
-
-  assert.deepEqual(t.calls("rest.issues.updateComment").map((a) => [a.comment_id, a.body.split("\n").at(-1)]), [
-    [1, STAMP(1, "cb4f8904")],
-    [2, STAMP(2, "1a2b3c4d")],
-  ]);
-  assert.deepEqual(t.posted(), [
-    ["UI Review", "success", "✓ Reviewed by Reece Como - 3 modified", URL("cb4f8904")],
-    ["UI Review (admin)", "success", "✓ Reviewed by Reece Como - 1 added", URL("1a2b3c4d")],
-  ]);
-});
-
-test("pull_request.labeled: display names are sanitised and fall back to the login", async () => {
-  const base = {
-    comments: [toolComment(1, "cb4f8904")],
-    statuses: [status()],
-  };
-  const t = setup({ ...base, current: pr({ labels: ["sublime!"] }), user: { name: null } });
-  await t.dispatch("pull_request.labeled", t.context(labelPayload("sublime!")));
-  assert.equal(t.posted()[0][2], "✓ Reviewed by reececomo - 3 modified");
-  assert.ok(t.calls("rest.issues.updateComment")[0].body.endsWith(STAMP(1, "cb4f8904", "reececomo")));
-
-  const u = setup({ ...base, current: pr({ labels: ["sublime!"] }), user: { name: "Alice <alice@example.com>" } });
-  await u.dispatch("pull_request.labeled", u.context(labelPayload("sublime!")));
-  assert.equal(u.posted()[0][2], "✓ Reviewed by Alice alice@example.com - 3 modified");
-  assert.ok(u.calls("rest.issues.updateComment")[0].body.endsWith(STAMP(1, "cb4f8904", "Alice alice@example.com")));
-});
-
-test("pull_request.labeled: a replayed event for a label that is gone does nothing", async () => {
-  const t = setup({ current: pr({ labels: [] }), comments: [toolComment(1, "cb4f8904")], statuses: [status()] });
-  await t.dispatch("pull_request.labeled", t.context(labelPayload("sublime!")));
-  assert.deepEqual(t.octokit.calls.map((c) => c.method), ["rest.pulls.get"]);
-});
-
-test("pull_request.labeled: nothing happens without a fingerprinted tool comment", async () => {
-  const t = setup({ current: pr({ labels: ["sublime!"] }), comments: [{ id: 3, body: "hi" }, { id: 4, body: "<!-- found-pixel-comment -->\n### UI Review" }] });
-  await t.dispatch("pull_request.labeled", t.context(labelPayload("sublime!")));
-  assert.deepEqual(t.octokit.calls.map((c) => c.method), ["rest.pulls.get", "paginate:rest.issues.listComments"]);
-});
-
-test("pull_request.labeled: other labels are ignored", async () => {
-  const t = setup();
-  await t.dispatch("pull_request.labeled", t.context(labelPayload("bug")));
-  assert.equal(t.octokit.calls.length, 0);
-});
-
-test("pull_request.unlabeled: a human removing the last approval label reverts and unstamps", async () => {
-  const t = setup({
-    current: pr({ labels: [] }),
-    comments: [toolComment(1, "cb4f8904", { stampFp: "cb4f8904" })],
-    statuses: [status({ state: "success", description: "✓ Reviewed by Reece Como - 3 modified" })],
-  });
-  await t.dispatch("pull_request.unlabeled", t.context(labelPayload("sublime!", { labels: [] })));
-  assert.deepEqual(t.calls("rest.issues.updateComment").map((a) => a.body.includes("ui-approved")), [false]);
-  assert.deepEqual(t.posted(), [["UI Review", "pending", 'Label as "splendid!" to approve - 3 modified', URL("cb4f8904")]]);
-});
-
-test("pull_request.unlabeled: the payload's label list is not trusted; the PR is re-read", async () => {
-  const t = setup({
-    current: pr({ labels: [] }),
-    comments: [toolComment(1, "cb4f8904", { stampFp: "cb4f8904" })],
-    statuses: [status({ state: "success", description: "✓ Reviewed by Reece Como - 3 modified" })],
-  });
-  await t.dispatch("pull_request.unlabeled", t.context(labelPayload("sublime!", { labels: ["sublime!"] })));
+  assert.deepEqual(t.calls("rest.issues.updateComment").map((a) => a.body), [toolComment(1, "11111111").body]);
   assert.deepEqual(t.posted().map((p) => p[1]), ["pending"]);
 });
 
-test("pull_request.unlabeled: ignored when another approval label remains or the app did it", async () => {
-  const t = setup({ current: pr({ labels: ["gorgeous!"] }) });
-  await t.dispatch("pull_request.unlabeled", t.context(labelPayload("sublime!", { labels: [] })));
-  assert.deepEqual(t.octokit.calls.map((c) => c.method), ["rest.pulls.get"]);
-  const u = setup();
-  await u.dispatch("pull_request.unlabeled", u.context(labelPayload("sublime!", { labels: [], type: "Bot" })));
-  assert.equal(u.octokit.calls.length, 0);
+test("status: an unticked box or a missing stamp stays pending and keeps the box", async () => {
+  for (const [comment, written] of [
+    [toolComment(1, "cb4f8904", { line: LINES.unticked, stampFp: "cb4f8904" }), [toolComment(1, "cb4f8904", { line: LINES.unticked }).body]],
+    [toolComment(1, "cb4f8904", { line: LINES.ticked }), []],
+  ]) {
+    const t = setup({ comments: [comment], statuses: withEvent() });
+    await onStatus(t);
+    assert.deepEqual(t.calls("rest.issues.updateComment").map((a) => a.body), written);
+    assert.deepEqual(t.posted().map((p) => p[1]), ["pending"]);
+  }
+});
+
+test("status: without a comment for the fingerprint only the status is touched", async () => {
+  const t = setup({ comments: [rawComment(1, "11111111")], statuses: withEvent() });
+  await onStatus(t);
+  assert.equal(t.calls("rest.issues.updateComment").length, 0);
+  assert.deepEqual(t.posted().map((p) => p[1]), ["pending"]);
+});
+
+test("status: each suite is approved by its own comment", async () => {
+  const t = setup({
+    comments: [rawComment(1, "cb4f8904"), approvedComment(2, "22222222", { suite: "admin" })],
+    statuses: withEvent({ context: "UI Review (admin)", fp: "22222222" }),
+  });
+  await onStatus(t, { context: "UI Review (admin)", fp: "22222222" });
+  assert.equal(t.calls("rest.issues.updateComment").length, 0);
+  assert.deepEqual(t.posted(), [["UI Review (admin)", "success", "✓ Reviewed by Reece Como - 3 modified", URL("22222222")]]);
+});
+
+const editPayload = (from, to, { id = 1, login = "reececomo" } = {}) => ({
+  comment: { id, body: to.body },
+  changes: { body: { from: from.body } },
+  issue: { number: 57, pull_request: {} },
+  sender: { login, type: "User" },
+});
+
+const onEdit = (t, from, to, opts) => t.dispatch("issue_comment.edited", t.context(editPayload(from, to, opts)));
+
+test("issue_comment.edited: ticking approves the comment and flips the pending statuses with its fingerprint", async () => {
+  const ticked = toolComment(1, "cb4f8904", { line: LINES.ticked });
+  const t = setup({
+    comment: ticked,
+    statuses: [
+      status({ description: "Approve in the PR comment - 3 modified" }),
+      status({ context: "UI Review (admin)", description: "1 added", fp: "1a2b3c4d" }),
+      status({ context: "UI Review (done)", state: "success", description: "No changes", fp: null }),
+    ],
+  });
+  await onEdit(t, toolComment(1, "cb4f8904"), ticked);
+
+  assert.deepEqual(t.calls("rest.issues.updateComment").map((a) => [a.comment_id, a.body]), [[1, approvedComment(1, "cb4f8904").body]]);
+  assert.deepEqual(t.posted(), [["UI Review", "success", "✓ Reviewed by Reece Como - 3 modified", URL("cb4f8904")]]);
+});
+
+test("issue_comment.edited: display names are sanitised and fall back to the login", async () => {
+  const ticked = toolComment(1, "cb4f8904", { line: LINES.ticked });
+  const t = setup({ comment: ticked, statuses: [status()], user: { name: null } });
+  await onEdit(t, toolComment(1, "cb4f8904"), ticked);
+  assert.equal(t.posted()[0][2], "✓ Reviewed by reececomo - 3 modified");
+
+  const u = setup({ comment: ticked, statuses: [status()], user: { name: "Alice <alice@example.com>" } });
+  await onEdit(u, toolComment(1, "cb4f8904"), ticked);
+  assert.equal(u.posted()[0][2], "✓ Reviewed by Alice alice@example.com - 3 modified");
+  assert.ok(u.calls("rest.issues.updateComment")[0].body.endsWith(STAMP("cb4f8904", "Alice alice@example.com")));
+});
+
+test("issue_comment.edited: unticking puts the comment back and reverts approved statuses", async () => {
+  const unticked = toolComment(1, "cb4f8904", { line: LINES.unticked, stampFp: "cb4f8904" });
+  const t = setup({
+    comment: unticked,
+    statuses: [
+      status({ state: "success", description: "✓ Reviewed by Reece Como - 3 modified" }),
+      status({ context: "UI Review (admin)", state: "success", description: "✓ Reviewed by Reece Como - 1 added", fp: "1a2b3c4d" }),
+    ],
+  });
+  await onEdit(t, approvedComment(1, "cb4f8904"), unticked);
+
+  assert.deepEqual(t.calls("rest.issues.updateComment").map((a) => a.body), [toolComment(1, "cb4f8904", { line: LINES.reverted }).body]);
+  assert.deepEqual(t.posted(), [["UI Review", "pending", "Approve in the PR comment - 3 modified", URL("cb4f8904")]]);
+});
+
+test("issue_comment.edited: rewrites that don't toggle the box, or change the fingerprint, are ignored", async () => {
+  const t = setup();
+  await onEdit(t, toolComment(1, "cb4f8904", { line: LINES.ticked }), approvedComment(1, "cb4f8904"));
+  await onEdit(t, approvedComment(1, "cb4f8904"), toolComment(1, "1a2b3c4d"));
+  await onEdit(t, { body: "hi" }, { body: "hello" });
+  assert.equal(t.octokit.calls.length, 0);
+});
+
+test("issue_comment.edited: a stale event (the comment has moved on) does nothing", async () => {
+  const t = setup({ comment: toolComment(1, "1a2b3c4d") });
+  await onEdit(t, toolComment(1, "cb4f8904"), toolComment(1, "cb4f8904", { line: LINES.ticked }));
+  assert.deepEqual(t.octokit.calls.map((c) => c.method), ["rest.issues.getComment"]);
+});
+
+test("issue_comment.edited: a closed PR does nothing", async () => {
+  const ticked = toolComment(1, "cb4f8904", { line: LINES.ticked });
+  const t = setup({ comment: ticked, current: pr({ state: "closed" }) });
+  await onEdit(t, toolComment(1, "cb4f8904"), ticked);
+  assert.deepEqual(t.octokit.calls.map((c) => c.method), ["rest.issues.getComment", "rest.pulls.get"]);
 });
