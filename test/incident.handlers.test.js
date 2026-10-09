@@ -627,7 +627,7 @@ test("a dedicated channel is private and code-named, with the summary kept insid
     assert.match(made.body.name, /^incy-1-[a-z]+-[a-z]+$/);
 
     const invite = fetchStub.calls.find((c) => c.url.endsWith("conversations.invite"));
-    assert.deepEqual(invite.body, { channel: "C_NEW", users: "U9" });
+    assert.deepEqual(invite.body, { channel: "C_NEW", users: "U9,U_DUSTY" });
 
     const created = fetchStub.calls.find((c) => c.url.endsWith("/rest/api/3/issue"));
     assert.match(created.body.fields.summary, /^[A-Z][a-z]+ [A-Z][a-z]+ Incident$/);

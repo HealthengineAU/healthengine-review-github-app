@@ -89,7 +89,8 @@
   - *Closed* opens a code-named private channel instead: the Jira summary is the code name
     (`Wintery Snowfall Incident`) and the channel adds the key (`incy-1234-wintery-snowfall`).
     The issue is labelled `private`, the summary is posted only inside the
-    channel, and updates go to the channel rather than a thread
+    channel, Dusty is invited alongside the reporter, and updates go to the
+    channel rather than a thread
   - *Mitigated* / *Resolved* buttons rename the issue with the prefix Jira
     automations key off, unpin the thread, and swap the reaction
   - A *Draft incident report* button tags Dusty in the thread, which is what
