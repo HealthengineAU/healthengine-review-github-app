@@ -70,15 +70,17 @@
 
 - Approves UI changes by checkbox (`UI Review` / `UI Review (<suite>)` statuses from
   found-pixel, when it posts `pending` with `fp=` in the URL):
-  - Adds an **Approve Changes** checkbox to the top of found-pixel's PR comment (the one with
-    the same fingerprint) and rewrites the status to `Approve in the PR comment - …`
+  - Rewrites the status to `Approval needed - …`, linking to found-pixel's PR comment (the one
+    with the same fingerprint), and adds an **Approve Changes** checkbox to the top of the
+    comment if found-pixel hasn't
   - Ticking it rewrites the line to `~Approve Changes~ - Approved by @<login>`, stamps the
     comment with the fingerprint, and flips the pending statuses with that fingerprint to
-    `✓ Reviewed by <name> - …`. Anyone able to edit the comment can approve
+    `✓ Reviewed by <name> - …`, linking back to found-pixel's review. Anyone able to edit the
+    comment can approve
   - found-pixel keeps the stamp when it rewrites the comment, so later builds with the same
     fingerprint are approved again; a different fingerprint drops the stamp and asks again
-  - Unticking reverts the line to `**Approve Changes**`, removes the stamp and puts the
-    approved statuses back to pending
+  - Unticking puts the original checkbox back, removes the stamp and puts the approved
+    statuses back to `Approval needed`
   - The app recognises its own statuses by their description prefix and acts only
     on the latest status for a context, so replayed or stale events are ignored
 - Starts incidents from Slack (`/incident`, see below):
