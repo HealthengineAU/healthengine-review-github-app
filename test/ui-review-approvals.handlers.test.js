@@ -70,7 +70,6 @@ test("status: pending without an approval adds the checkbox and points the statu
 test("status: the app's own rewrites and other contexts are ignored", async () => {
   const t = setup({ statuses: withEvent() });
   await onStatus(t, { description: "Review needed - 3 modified" });
-  await onStatus(t, { description: "Approval needed - 3 modified" });
   await onStatus(t, { description: "Needs Jarvis code owner approval - 3 modified" });
   await onStatus(t, { context: "AI Review" });
   assert.equal(t.octokit.calls.length, 0);

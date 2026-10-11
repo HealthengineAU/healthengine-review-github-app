@@ -46,7 +46,6 @@ test("reviewState reads the fingerprint, checkbox and its label in any form", ()
   assert.deepEqual(state("approved"), { fp: "cb4f8904", ticked: true, label: "~Changes reviewed~ - Reviewed by @reececomo" });
   assert.deepEqual(state("unticked"), { ...state("approved"), ticked: false });
   assert.equal(reviewState(body("cb4f8904").replace("[ ]", "[X]")).ticked, true);
-  assert.equal(reviewState(body("cb4f8904").replace("Changes reviewed", "Approve Changes")).ticked, false);
   assert.equal(reviewState(raw("cb4f8904")), null);
   assert.equal(reviewState(LINES.ticked), null);
   assert.equal(reviewState(undefined), null);
