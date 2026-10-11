@@ -69,10 +69,14 @@ export function makeOctokit(responses = {}) {
       },
       issues: {
         listComments: tag("rest.issues.listComments"),
+        listEventsForTimeline: tag("rest.issues.listEventsForTimeline"),
         createComment: record("rest.issues.createComment"),
         getComment: record("rest.issues.getComment"),
         updateComment: record("rest.issues.updateComment"),
         removeLabel: record("rest.issues.removeLabel"),
+      },
+      teams: {
+        listMembersInOrg: tag("rest.teams.listMembersInOrg"),
       },
       users: {
         getByUsername: record("rest.users.getByUsername"),

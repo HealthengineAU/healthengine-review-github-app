@@ -4,23 +4,21 @@ import assert from "node:assert/strict";
 const {
   approvalOf,
   approve,
-  approvedDescription,
-  baseDescription,
   fingerprintOf,
   isUiReviewStatus,
   parseStamp,
-  pendingDescription,
   prompt,
   renderStamp,
   reviewState,
   unapprove,
+  uiReviewStatus,
 } = await import("../lib/ui-review-approvals.js");
 
 const LINES = {
-  prompt: "> - [ ] **Approve Changes** - ✅ Check this box to confirm these changes",
-  ticked: "> - [x] **Approve Changes** - ✅ Check this box to confirm these changes",
-  approved: "> - [x] ~Approve Changes~ - Approved by @reececomo",
-  unticked: "> - [ ] ~Approve Changes~ - Approved by @reececomo",
+  prompt: "> - [ ] **Changes Reviewed** - ✅ Check this box to confirm these changes",
+  ticked: "> - [x] **Changes Reviewed** - ✅ Check this box to confirm these changes",
+  approved: "> - [x] ~Changes Reviewed~ - Reviewed by @reececomo",
+  unticked: "> - [ ] ~Changes Reviewed~ - Reviewed by @reececomo",
 };
 const raw = (fp) => `<!-- found-pixel-comment -->\n<!-- ui-review fp=${fp} -->\n## 📘 UI Review`;
 const body = (fp, line = "prompt") =>
@@ -43,9 +41,9 @@ test("fingerprintOf reads the fp param", () => {
 
 test("reviewState reads the fingerprint, checkbox and its label in any form", () => {
   const state = (line) => reviewState(body("cb4f8904", line));
-  assert.deepEqual(state("prompt"), { fp: "cb4f8904", ticked: false, label: "**Approve Changes** - ✅ Check this box to confirm these changes" });
+  assert.deepEqual(state("prompt"), { fp: "cb4f8904", ticked: false, label: "**Changes Reviewed** - ✅ Check this box to confirm these changes" });
   assert.deepEqual(state("ticked"), { ...state("prompt"), ticked: true });
-  assert.deepEqual(state("approved"), { fp: "cb4f8904", ticked: true, label: "~Approve Changes~ - Approved by @reececomo" });
+  assert.deepEqual(state("approved"), { fp: "cb4f8904", ticked: true, label: "~Changes Reviewed~ - Reviewed by @reececomo" });
   assert.deepEqual(state("unticked"), { ...state("approved"), ticked: false });
   assert.equal(reviewState(body("cb4f8904").replace("[ ]", "[X]")).ticked, true);
   assert.equal(reviewState(raw("cb4f8904")), null);
@@ -85,13 +83,33 @@ test("parseStamp tolerates a missing name", () => {
   assert.deepEqual(parseStamp("x <!-- ui-approved fp=1 by=bob --> y"), { fp: "1", by: "bob", name: "bob" });
 });
 
-test("descriptions keep the tool's text under any prefix and stay within 140 chars", () => {
-  assert.equal(baseDescription("3 modified"), "3 modified");
-  assert.equal(baseDescription("Approval needed - 3 modified"), "3 modified");
-  assert.equal(baseDescription("✓ Reviewed by Reece Como - 3 modified"), "3 modified");
-  assert.equal(pendingDescription("✓ Reviewed by X - 1 added, 2 modified"), "Approval needed - 1 added, 2 modified");
-  assert.equal(approvedDescription("Reece Como", "Approval needed - 3 modified"), "✓ Reviewed by Reece Como - 3 modified");
-  const long = approvedDescription("A".repeat(100), "B".repeat(100));
+test("uiReviewStatus combines a required review with outstanding code owners", () => {
+  const tool = { state: "pending", description: "3 modified", target_url: "https://v/?fp=cb4f8904" };
+  const status = (opts) => uiReviewStatus(tool, { commentUrl: "https://c", ...opts });
+  const reece = { approval: { name: "Reece Como" } };
+  const jarvis = [["@acme/jarvis"]];
+
+  assert.deepEqual(status({ review: { approval: null } }), { state: "pending", description: "Review needed - 3 modified", target_url: "https://c" });
+  assert.deepEqual(status({ review: reece }), { state: "success", description: "✓ Reviewed by Reece Como - 3 modified", target_url: tool.target_url });
+  assert.equal(status({ review: reece, owners: { pending: jarvis, approved: [] } }).description, "Needs Jarvis code owner approval, Reviewed by Reece Como - 3 modified");
+  assert.equal(status({ review: { approval: null }, owners: { pending: [["@acme/jarvis"], ["@reececomo"]], approved: [] } }).description, "Needs Jarvis, reececomo code owner approval, Review needed - 3 modified");
+  assert.deepEqual(status({ review: reece, owners: { pending: [], approved: [["@acme/marketplace", "@acme/patient-accounts"]] } }), {
+    state: "success",
+    description: "✓ Reviewed by Reece Como, Approved by Marketplace/Patient Accounts - 3 modified",
+    target_url: tool.target_url,
+  });
+
+  const done = { state: "success", description: "3 modified", target_url: "https://v" };
+  assert.deepEqual(uiReviewStatus(done, { review: null, owners: { pending: jarvis, approved: [] }, commentUrl: "https://c" }), {
+    state: "pending", description: "Needs Jarvis code owner approval - 3 modified", target_url: "https://c",
+  });
+  assert.deepEqual(uiReviewStatus(done, { review: null, owners: { pending: [], approved: [] } }), done);
+  assert.deepEqual(uiReviewStatus(done, { review: null, owners: null }), done);
+});
+
+test("uiReviewStatus stays within 140 chars", () => {
+  const tool = { state: "pending", description: "B".repeat(100), target_url: "https://v" };
+  const long = uiReviewStatus(tool, { review: { approval: { name: "A".repeat(100) } } }).description;
   assert.equal(long.length, 140);
   assert.ok(long.endsWith("…"));
 });
