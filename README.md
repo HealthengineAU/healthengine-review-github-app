@@ -83,6 +83,13 @@
     statuses back to `Approval needed`
   - The app recognises its own statuses by their description prefix and acts only
     on the latest status for a context, so replayed or stale events are ignored
+- Notifies the owners of UI changes, when found-pixel's comment asks (`notifyOwners` in its config
+  adds `<!-- ui-owners notify=<mention|invite> @org/team … -->`):
+  - Once the PR is open and not a draft: when the comment appears or its owners change, or when the
+    PR is marked ready for review
+  - `invite` requests the owners as reviewers; `mention` posts one comment @mentioning them
+  - Skips the author and anyone whose review was ever requested on the PR (so removing a request
+    sticks), or who has reviewed it, or was mentioned already
 - Starts incidents from Slack (`/incident`, see below):
   - One short form raises an `INCY` Incident. *Open* posts a triage thread in
     the current channel (or the incidents channel, where the app can't post),

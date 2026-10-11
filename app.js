@@ -7,6 +7,7 @@ import { register as registerIncidentCommand } from "./lib/incident/index.js";
 import { register as registerLinkIssueKeys } from "./lib/link-issue-keys.js";
 import { register as registerTriggerAiReview } from "./lib/trigger-ai-review.js";
 import { register as registerUiReviewApprovals } from "./lib/ui-review-approvals.js";
+import { register as registerUiReviewOwners } from "./lib/ui-review-owners.js";
 
 // Probot calls this with (app, { getRouter, cwd }) — getRouter is only present
 // when running under the HTTP server, and is what mounts non-webhook routes.
@@ -20,4 +21,5 @@ export default (app, options = {}) => {
   registerLinkIssueKeys(app);
   registerTriggerAiReview(app);
   registerUiReviewApprovals(app);
+  registerUiReviewOwners(app);
 };
