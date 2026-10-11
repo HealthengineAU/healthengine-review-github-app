@@ -75,6 +75,9 @@ export function makeOctokit(responses = {}) {
         updateComment: record("rest.issues.updateComment"),
         removeLabel: record("rest.issues.removeLabel"),
       },
+      teams: {
+        listMembersInOrg: tag("rest.teams.listMembersInOrg"),
+      },
       users: {
         getByUsername: record("rest.users.getByUsername"),
       },
