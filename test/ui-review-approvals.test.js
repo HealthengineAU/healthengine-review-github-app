@@ -15,10 +15,10 @@ const {
 } = await import("../lib/ui-review-approvals.js");
 
 const LINES = {
-  prompt: "> - [ ] **Changes reviewed** - ✅ Check this box to confirm these changes",
-  ticked: "> - [x] **Changes reviewed** - ✅ Check this box to confirm these changes",
-  approved: "> - [x] ~Changes reviewed~ - Reviewed by @reececomo",
-  unticked: "> - [ ] ~Changes reviewed~ - Reviewed by @reececomo",
+  prompt: "> - [ ] **Changes Reviewed** - ✅ Check this box to confirm these changes",
+  ticked: "> - [x] **Changes Reviewed** - ✅ Check this box to confirm these changes",
+  approved: "> - [x] ~Changes Reviewed~ - Reviewed by @reececomo",
+  unticked: "> - [ ] ~Changes Reviewed~ - Reviewed by @reececomo",
 };
 const raw = (fp) => `<!-- found-pixel-comment -->\n<!-- ui-review fp=${fp} -->\n## 📘 UI Review`;
 const body = (fp, line = "prompt") =>
@@ -41,9 +41,9 @@ test("fingerprintOf reads the fp param", () => {
 
 test("reviewState reads the fingerprint, checkbox and its label in any form", () => {
   const state = (line) => reviewState(body("cb4f8904", line));
-  assert.deepEqual(state("prompt"), { fp: "cb4f8904", ticked: false, label: "**Changes reviewed** - ✅ Check this box to confirm these changes" });
+  assert.deepEqual(state("prompt"), { fp: "cb4f8904", ticked: false, label: "**Changes Reviewed** - ✅ Check this box to confirm these changes" });
   assert.deepEqual(state("ticked"), { ...state("prompt"), ticked: true });
-  assert.deepEqual(state("approved"), { fp: "cb4f8904", ticked: true, label: "~Changes reviewed~ - Reviewed by @reececomo" });
+  assert.deepEqual(state("approved"), { fp: "cb4f8904", ticked: true, label: "~Changes Reviewed~ - Reviewed by @reececomo" });
   assert.deepEqual(state("unticked"), { ...state("approved"), ticked: false });
   assert.equal(reviewState(body("cb4f8904").replace("[ ]", "[X]")).ticked, true);
   assert.equal(reviewState(raw("cb4f8904")), null);

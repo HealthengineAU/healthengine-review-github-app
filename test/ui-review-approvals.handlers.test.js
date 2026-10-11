@@ -9,10 +9,10 @@ const URL = (fp) => `https://visreg.he0.io/?r=catalyst&b=feature-x${fp ? `&fp=${
 const STAMP = (fp, name = "Reece Como") => `<!-- ui-approved fp=${fp} by=reececomo name="${name}" -->`;
 
 const LINES = {
-  prompt: "> - [ ] **Changes reviewed** - ✅ Check this box to confirm these changes",
-  ticked: "> - [x] **Changes reviewed** - ✅ Check this box to confirm these changes",
-  approved: (login = "reececomo") => `> - [x] ~Changes reviewed~ - Reviewed by @${login}`,
-  unticked: "> - [ ] ~Changes reviewed~ - Reviewed by @reececomo",
+  prompt: "> - [ ] **Changes Reviewed** - ✅ Check this box to confirm these changes",
+  ticked: "> - [x] **Changes Reviewed** - ✅ Check this box to confirm these changes",
+  approved: (login = "reececomo") => `> - [x] ~Changes Reviewed~ - Reviewed by @${login}`,
+  unticked: "> - [ ] ~Changes Reviewed~ - Reviewed by @reececomo",
 };
 
 const COMMENT_URL = (id) => `https://github.com/acme/catalyst/pull/57#issuecomment-${id}`;

@@ -71,9 +71,9 @@
 - Approves UI changes by checkbox (`UI Review` / `UI Review (<suite>)` statuses from
   found-pixel, when it posts `pending` with `fp=` in the URL):
   - Rewrites the status to `Review needed - …`, linking to found-pixel's PR comment (the one
-    with the same fingerprint), and adds a **Changes reviewed** checkbox to the top of the
+    with the same fingerprint), and adds a **Changes Reviewed** checkbox to the top of the
     comment if found-pixel hasn't
-  - Ticking it rewrites the line to `~Changes reviewed~ - Reviewed by @<login>`, stamps the
+  - Ticking it rewrites the line to `~Changes Reviewed~ - Reviewed by @<login>`, stamps the
     comment with the fingerprint, and flips the pending statuses with that fingerprint to
     `✓ Reviewed by <name> - …`, linking back to found-pixel's review. Anyone able to edit the
     comment can approve

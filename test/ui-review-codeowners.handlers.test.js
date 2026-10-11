@@ -63,7 +63,7 @@ test("drafts are held but only invited once ready for review", async () => {
 test("a required review and outstanding code owners show together", async () => {
   const stamp = '<!-- ui-approved fp=cb4f8904 by=reececomo name="Reece Como" -->';
   const t = setup({
-    comments: [comment(["@acme/jarvis"], { fp: "cb4f8904", extra: ["> [!Warning]", "> - [x] ~Changes reviewed~ - Reviewed by @reececomo", stamp] })],
+    comments: [comment(["@acme/jarvis"], { fp: "cb4f8904", extra: ["> [!Warning]", "> - [x] ~Changes Reviewed~ - Reviewed by @reececomo", stamp] })],
     statuses: [toolStatus({ state: "pending", fp: "cb4f8904" })],
   });
   await t.onStatus();
