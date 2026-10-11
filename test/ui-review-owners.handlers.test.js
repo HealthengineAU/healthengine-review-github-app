@@ -95,6 +95,14 @@ test("mentions only owners not mentioned or requested before", async () => {
   assert.match(t.calls("rest.issues.createComment")[0].body, /^<!-- ui-owners-notified @acme\/jarvis -->/);
 });
 
+test("doesn't invite owners it already mentioned", async () => {
+  const comment = toolComment(tag("invite", ["@acme/pingu", "@acme/jarvis"]));
+  const earlier = { id: 2, body: "<!-- ui-owners-notified @acme/pingu -->\n👀 @acme/pingu" };
+  const t = setup({ comments: [comment, earlier] });
+  await t.dispatch("pull_request.ready_for_review", t.context({ pull_request: pr() }));
+  assert.deepEqual(invited(t), [{ reviewers: [], team_reviewers: ["jarvis"] }]);
+});
+
 test("comments without the tag, or edits that keep the same owners, are ignored", async () => {
   const body = toolComment(tag("invite", ["@acme/pingu"])).body;
   const t = setup();

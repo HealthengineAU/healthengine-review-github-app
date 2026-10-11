@@ -83,7 +83,7 @@
     statuses back to `Approval needed`
   - The app recognises its own statuses by their description prefix and acts only
     on the latest status for a context, so replayed or stale events are ignored
-- Notifies the owners of UI changes, when found-pixel's comment asks (`notifyOwners` in its config
+- Notifies the owners of UI changes, when found-pixel's comment asks (`codeowners` in its config
   adds `<!-- ui-owners notify=<mention|invite> @org/team … -->`):
   - Once the PR is open and not a draft: when the comment appears or its owners change, or when the
     PR is marked ready for review
