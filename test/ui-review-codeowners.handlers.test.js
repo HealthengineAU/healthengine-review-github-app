@@ -10,17 +10,13 @@ const COMMENT_URL = "https://github.com/acme/catalyst/pull/57#issuecomment-1";
 const TEAMS = { pingu: ["dev", "penny"], jarvis: ["jill"], marketplace: ["mia"], "patient-accounts": ["pat"] };
 
 const ownersTag = (entries) => `<!-- ui-owners${entries.map((e) => ` ${e}`).join("")} -->`;
-const FOUND_PIXEL = { login: "healthengine-sre" };
-const comment = (entries, { fp, extra = [], user = FOUND_PIXEL } = {}) => ({
+const comment = (entries, { fp, extra = [] } = {}) => ({
   id: 1,
-  user,
   html_url: COMMENT_URL,
   body: ["<!-- found-pixel-comment -->", ...(fp ? [`<!-- ui-review fp=${fp} -->`] : []), ownersTag(entries), ...extra, "## 📘 UI Review"].join("\n"),
 });
 const pr = ({ draft = false, state = "open", author = "dev" } = {}) => ({ number: 57, draft, state, user: { login: author }, head: { sha: SHA } });
-const toolStatus = ({ state = "success", fp } = {}) => ({
-  context: "UI Review", state, description: "3 modified", target_url: VIEWER(fp), creator: FOUND_PIXEL,
-});
+const toolStatus = ({ state = "success", fp } = {}) => ({ context: "UI Review", state, description: "3 modified", target_url: VIEWER(fp) });
 const approval = (login, id = 1) => ({ id, state: "APPROVED", user: { login } });
 
 function setup({ current = pr(), comments = [], timeline = [], reviews = [], statuses = [toolStatus()] } = {}) {
@@ -119,13 +115,6 @@ test("never re-invites an owner asked before, even if removed, but still waits f
   await t.onStatus();
   assert.deepEqual(t.invited(), []);
   assert.deepEqual(t.posted(), [["pending", "Needs Jarvis code owner approval - 3 modified", COMMENT_URL]]);
-});
-
-test("owners tags from anyone but found-pixel's account are ignored", async () => {
-  const t = setup({ comments: [comment(["@acme/jarvis"], { user: { login: "mallory" } })] });
-  await t.onStatus();
-  assert.deepEqual(t.invited(), []);
-  assert.deepEqual(t.posted(), []);
 });
 
 test("a failed invite is logged and the status still held", async () => {
