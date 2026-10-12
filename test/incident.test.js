@@ -163,7 +163,7 @@ test("a dedicated channel's replies say channel, not thread", () => {
   const created = createdBlocks({ key: "INCY-1", channel: "C1", threadUrl: "https://s", dedicated: true });
   assert.equal(created.at(-1).elements.at(-1).text.text, "View INCY-1 channel");
 
-  const thanks = thanksBlocks({ key: "INCY-1", threadUrl: "u", issueUrl: "i", reportUrl: null, dedicated: true });
+  const thanks = thanksBlocks({ key: "INCY-1", name: "Misty Fern Incident", threadUrl: "u", dedicated: true });
   assert.equal(thanks.at(-1).elements[0].text.text, "View channel");
 
   assert.match(
@@ -266,12 +266,11 @@ test("draftReportPrompt wakes Dusty with the requester as the actor", () => {
   assert.ok(out.body.includes("Set the 'Incident report' url in INCY-1"));
 });
 
-test("thanksBlocks drops the report button when no Notion url is configured", () => {
-  const withUrl = thanksBlocks({ key: "INCY-1", threadUrl: "u", issueUrl: "i", reportUrl: "n" });
-  const without = thanksBlocks({ key: "INCY-1", threadUrl: "u", issueUrl: "i", reportUrl: null });
-  assert.equal(withUrl.at(-1).elements.length, 3);
-  assert.equal(without.at(-1).elements.length, 2);
-  assert.ok(without.at(-1).elements.every((e) => typeof e.url === "string" && e.url));
+test("thanksBlocks names the incident and only links back to it", () => {
+  const blocks = thanksBlocks({ key: "INCY-1", name: "Bookings failing", threadUrl: "u" });
+  assert.equal(blocks[0].text.text, "Thanks for reporting *INCY-1: Bookings failing* :sparkles:");
+  assert.equal(blocks.at(-1).elements.length, 1);
+  assert.equal(thanksBlocks({ key: "INCY-1", name: "x", threadUrl: null }).length, 1);
 });
 
 test("findAccountId matches the email case-insensitively", async () => {
