@@ -9,11 +9,7 @@ const CONFIG = {
     automatic: true,
     rules: [
       { keys: ["ABC", "XY"], url: "https://example.atlassian.net/browse/$KEY-$NUMBER" },
-      {
-        keys: ["THING-SESSION"],
-        label: "session #$NUMBER",
-        url: "https://github.com/example-org/example-repo/issues/$NUMBER",
-      },
+      { keys: ["THING-SESSION"], link: "[session #$NUMBER](https://github.com/example-org/example-repo/issues/$NUMBER)" },
     ],
   },
 };
@@ -77,6 +73,28 @@ test("pull_request.opened: rules route each key to its own tracker", async () =>
   assert.ok(
     updates[0].args.body.startsWith(
       "[session #220](https://github.com/example-org/example-repo/issues/220)\n\n",
+    ),
+  );
+});
+
+test("pull_request.opened: stacked keys are linked on one line", async () => {
+  const updates = await open(makePr({ branch: "claude/thing-session-998-abc-1024-fix-the-bug", title: "Fix the bug" }));
+  assert.equal(updates.length, 1);
+  assert.ok(
+    updates[0].args.body.startsWith(
+      "[session #998](https://github.com/example-org/example-repo/issues/998) ‧ [ABC-1024](https://example.atlassian.net/browse/ABC-1024)\n\n",
+    ),
+  );
+});
+
+test("pull_request.opened: the separator is configurable", async () => {
+  const updates = await open(makePr({ branch: "abc-334-xy-123-my-feature", title: "My feature" }), {
+    config: { issue_links: { ...CONFIG.issue_links, separator: "·" } },
+  });
+  assert.equal(updates.length, 1);
+  assert.ok(
+    updates[0].args.body.startsWith(
+      "[ABC-334](https://example.atlassian.net/browse/ABC-334) · [XY-123](https://example.atlassian.net/browse/XY-123)\n\n",
     ),
   );
 });

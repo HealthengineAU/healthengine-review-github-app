@@ -55,9 +55,11 @@
 - Links the issue a pull request is for into its description (opt-in via `issue_links`):
   - On `pull_request.opened`, when the branch name or title names an issue
     (`ABC-123`) and the description neither mentions nor links it
-  - `issue_links.rules` says which keys count and where each points, so
-    `cs-123` and `thing-session-220` can reach different trackers — a key no
-    rule claims (`node-21`, `hono-4-13-8`) is never linked
+  - `issue_links.rules` says which keys count, where each points and how it's
+    labelled, so `cs-123` and `thing-session-220` can reach different trackers
+    — a key no rule claims (`node-21`, `hono-4-13-8`) is never linked
+  - Several keys stack on one line (`abc-1-xy-2-feature`), joined by
+    `issue_links.separator`
   - Descriptions that already name the issue are left alone, so a tracker that
     auto-links keys itself isn't doubled up on
 - Forwards activity to autonomous agent proxies (opt-in via `agents`):
@@ -233,22 +235,23 @@ ai_review:
 # description doesn't mention, the key is prepended to the description as a
 # link. Each rule claims a set of keys and says where they point; the first rule
 # whose `keys` match wins. `keys` and `repositories` take the same filter
-# patterns as ai_review above. Templates substitute $KEY (upper-cased), $key
-# (lower-cased) and $NUMBER.
+# patterns as ai_review above. A rule renders as its `link` template, or as
+# `[label](url)`; templates substitute $KEY (upper-cased), $key (lower-cased)
+# and $NUMBER.
 #
 # Requires the app to have Pull requests: Read and write.
 issue_links:
   automatic: false      # set true to start editing descriptions
   repositories: ["*"]   # e.g. ["*", "!legacy-monolith"]
+  separator: "‧"        # between links when a branch names several
+                        # (abc-1-xy-2-feature → [ABC-1](…) ‧ [XY-2](…))
   rules:
     - keys: [ABC, XY]   # abc-123, claude/XY-45-something, someone/abc-123-wip
       url: https://example.atlassian.net/browse/$KEY-$NUMBER
-    - keys: [THING-SESSION]                # keys may span hyphens, and the
-      label: "session #$NUMBER"            # longest one a rule claims wins —
-                                           # thing-session-220 is not the same
-                                           # key as other-session-220.
-                                           # (quote values containing "#")
-      url: https://github.com/example-org/example-repo/issues/$NUMBER
+    - keys: [THING-SESSION]   # keys may span hyphens, and the longest one a
+                              # rule claims wins — thing-session-220 is not
+                              # the same key as other-session-220
+      link: "[session #$NUMBER](https://github.com/example-org/example-repo/issues/$NUMBER)"
 
 # Agent proxies (optional; omit the key entirely to disable).
 #

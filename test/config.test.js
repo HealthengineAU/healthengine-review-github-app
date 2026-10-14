@@ -566,10 +566,22 @@ test("normalizeIssueLinkRules: keys take filter patterns, label defaults", () =>
   const [rule] = normalizeIssueLinkRules([
     { keys: ["ABC", "XY"], url: "https://example.test/browse/$KEY-$NUMBER" },
   ]);
-  assert.equal(rule.label, "$KEY-$NUMBER");
-  assert.equal(rule.url, "https://example.test/browse/$KEY-$NUMBER");
+  assert.equal(rule.link, "[$KEY-$NUMBER](https://example.test/browse/$KEY-$NUMBER)");
   assert.equal(matchesFilterPatterns(rule.keys, "abc"), true);
   assert.equal(matchesFilterPatterns(rule.keys, "node"), false);
+});
+
+test("normalizeIssueLinkRules: a link template wins over label and url", () => {
+  const [rule] = normalizeIssueLinkRules([
+    { keys: ["ABC"], label: "ignored", url: "https://ignored.test", link: "[Session #$NUMBER](https://example.test/$NUMBER)" },
+  ]);
+  assert.equal(rule.link, "[Session #$NUMBER](https://example.test/$NUMBER)");
+});
+
+test("normalizeIssueLinks: separator defaults and trims", () => {
+  assert.equal(normalizeIssueLinks(undefined).separator, "‧");
+  assert.equal(normalizeIssueLinks({ separator: " | " }).separator, "|");
+  assert.equal(normalizeIssueLinks({ separator: " " }).separator, "‧");
 });
 
 test("normalizeIssueLinkRules: rules without usable keys or url are dropped", () => {
@@ -578,6 +590,7 @@ test("normalizeIssueLinkRules: rules without usable keys or url are dropped", ()
   assert.deepEqual(normalizeIssueLinkRules([{ keys: ["ABC"] }]), []);
   assert.deepEqual(normalizeIssueLinkRules([{ url: "https://example.test/$NUMBER" }]), []);
   assert.equal(normalizeIssueLinkRules([{ keys: [" "], url: " " }]).length, 0);
+  assert.equal(normalizeIssueLinkRules([{ keys: ["ABC"], link: " " }]).length, 0);
 });
 
 test("normalizeIssueLinks: repositories filter the rollout", () => {
