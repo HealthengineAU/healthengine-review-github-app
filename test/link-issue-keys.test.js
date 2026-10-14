@@ -5,6 +5,7 @@ import {
   extractReferences,
   mentionsReference,
   missingReferences,
+  updatedDescription,
   withIssueLinks,
 } from "../lib/link-issue-keys.js";
 import { normalizeIssueLinkRules } from "../lib/config.js";
@@ -226,19 +227,19 @@ test("withIssueLinks: prepends the link above the existing description", () => {
       body: "Malformed bearer tokens (empty strings, ...",
       references: [jira("ABC", 5752)],
     }),
-    "[ABC-5752](https://example.atlassian.net/browse/ABC-5752)\n\nMalformed bearer tokens (empty strings, ...",
+    "[ABC-5752](https://example.atlassian.net/browse/ABC-5752) <!-- issue-links -->\n\nMalformed bearer tokens (empty strings, ...",
   );
 });
 
 test("withIssueLinks: leading indentation in the description is preserved", () => {
   assert.equal(
     withIssueLinks({ body: "    indented code block\n", references: [jira("ABC", 5752)] }),
-    "[ABC-5752](https://example.atlassian.net/browse/ABC-5752)\n\n    indented code block\n",
+    "[ABC-5752](https://example.atlassian.net/browse/ABC-5752) <!-- issue-links -->\n\n    indented code block\n",
   );
   // Leading blank lines would otherwise stack up under the link.
   assert.equal(
     withIssueLinks({ body: "\n\nSummary.", references: [jira("ABC", 5752)] }),
-    "[ABC-5752](https://example.atlassian.net/browse/ABC-5752)\n\nSummary.",
+    "[ABC-5752](https://example.atlassian.net/browse/ABC-5752) <!-- issue-links -->\n\nSummary.",
   );
 });
 
@@ -246,17 +247,48 @@ test("withIssueLinks: several links share a line, joined by the separator", () =
   const references = [jira("ABC", 951), jira("XY", 1183)];
   assert.equal(
     withIssueLinks({ body: "", references }),
-    "[ABC-951](https://example.atlassian.net/browse/ABC-951) ‧ [XY-1183](https://example.atlassian.net/browse/XY-1183)",
+    "[ABC-951](https://example.atlassian.net/browse/ABC-951) ‧ [XY-1183](https://example.atlassian.net/browse/XY-1183) <!-- issue-links -->",
   );
   assert.equal(
     withIssueLinks({ body: "", references, separator: "|" }),
-    "[ABC-951](https://example.atlassian.net/browse/ABC-951) | [XY-1183](https://example.atlassian.net/browse/XY-1183)",
+    "[ABC-951](https://example.atlassian.net/browse/ABC-951) | [XY-1183](https://example.atlassian.net/browse/XY-1183) <!-- issue-links -->",
   );
 });
 
 test("withIssueLinks: an empty description becomes just the links", () => {
   assert.equal(
     withIssueLinks({ body: null, references: [jira("ABC", 951)] }),
-    "[ABC-951](https://example.atlassian.net/browse/ABC-951)",
+    "[ABC-951](https://example.atlassian.net/browse/ABC-951) <!-- issue-links -->",
   );
+});
+
+test("withIssueLinks: a marked line is replaced in place", () => {
+  const body = "Intro.\n\n[ABC-1](https://example.atlassian.net/browse/ABC-1) <!-- issue-links -->\n\nRest.";
+  assert.equal(
+    withIssueLinks({ body, references: [jira("ABC", 1), jira("XY", 2)] }),
+    "Intro.\n\n[ABC-1](https://example.atlassian.net/browse/ABC-1) ‧ [XY-2](https://example.atlassian.net/browse/XY-2) <!-- issue-links -->\n\nRest.",
+  );
+});
+
+// ---------------------------------------------------------------------------
+// updatedDescription
+// ---------------------------------------------------------------------------
+
+const naming = { branch: "ABC-1-xy-2-feature", title: "Feature", rules: RULES };
+const LINE = "[ABC-1](https://example.atlassian.net/browse/ABC-1) ‧ [XY-2](https://example.atlassian.net/browse/XY-2) <!-- issue-links -->";
+
+test("updatedDescription: adds the line when a reference is missing", () => {
+  assert.equal(updatedDescription({ ...naming, body: "Summary." }), `${LINE}\n\nSummary.`);
+  assert.equal(updatedDescription({ ...naming, body: "Part of ABC-1." }), `${LINE}\n\nPart of ABC-1.`);
+});
+
+test("updatedDescription: nothing to do when every reference is already mentioned", () => {
+  assert.equal(updatedDescription({ ...naming, body: "Part of ABC-1 and XY-2." }), null);
+  assert.equal(updatedDescription({ ...naming, body: `${LINE}\n\nSummary.` }), null);
+  assert.equal(updatedDescription({ branch: "node-21", title: "Bump", body: "", rules: RULES }), null);
+});
+
+test("updatedDescription: a stale marked line is brought up to date", () => {
+  const stale = "[ABC-1](https://example.atlassian.net/browse/ABC-1) <!-- issue-links -->\n\nSummary.";
+  assert.equal(updatedDescription({ ...naming, body: stale }), `${LINE}\n\nSummary.`);
 });

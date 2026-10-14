@@ -27,13 +27,13 @@ function makePr({
 
 // `current` is the description the re-read returns, i.e. what the PR looks
 // like by the time we write — the same as the payload's unless a test says so.
-async function open(payload, { config = CONFIG, repo, current } = {}) {
+async function open(payload, { config = CONFIG, repo, current, event = "pull_request.opened" } = {}) {
   const { app, dispatch } = makeApp();
   register(app);
   const octokit = makeOctokit({
     "rest.pulls.get": { data: { body: current === undefined ? payload.pull_request.body : current } },
   });
-  await dispatch("pull_request.opened", makeContext({ octokit, payload, config, repo }));
+  await dispatch(event, makeContext({ octokit, payload, config, repo }));
   return octokit.calls.filter((c) => c.method === "rest.pulls.update");
 }
 
@@ -43,8 +43,33 @@ test("pull_request.opened: the branch key is prepended to the description", asyn
   assert.equal(updates[0].args.pull_number, 42);
   assert.equal(
     updates[0].args.body,
-    "[ABC-5752](https://example.atlassian.net/browse/ABC-5752)\n\nMalformed bearer tokens (empty strings, ...",
+    "[ABC-5752](https://example.atlassian.net/browse/ABC-5752) <!-- issue-links -->\n\nMalformed bearer tokens (empty strings, ...",
   );
+});
+
+test("pull_request.edited: a rewritten description gets the link back", async () => {
+  const updates = await open(makePr({ body: "Rewritten by a tool that dropped the link." }), { event: "pull_request.edited" });
+  assert.equal(updates.length, 1);
+  assert.equal(
+    updates[0].args.body,
+    "[ABC-5752](https://example.atlassian.net/browse/ABC-5752) <!-- issue-links -->\n\nRewritten by a tool that dropped the link.",
+  );
+});
+
+test("pull_request.edited: a marked line is replaced in place, not stacked", async () => {
+  const body = "Intro.\n\n[ABC-5752](https://example.atlassian.net/browse/ABC-5752) <!-- issue-links -->\n\nSummary.";
+  const updates = await open(makePr({ body, title: "XY-1 Retitled" }), { event: "pull_request.edited" });
+  assert.equal(updates.length, 1);
+  assert.equal(
+    updates[0].args.body,
+    "Intro.\n\n[ABC-5752](https://example.atlassian.net/browse/ABC-5752) ‧ [XY-1](https://example.atlassian.net/browse/XY-1) <!-- issue-links -->\n\nSummary.",
+  );
+});
+
+test("pull_request.edited: a description that still has the link is left alone", async () => {
+  const body = "[ABC-5752](https://example.atlassian.net/browse/ABC-5752) <!-- issue-links -->\n\nEdited summary.";
+  const updates = await open(makePr({ body }), { event: "pull_request.edited" });
+  assert.equal(updates.length, 0);
 });
 
 test("pull_request.opened: a description that already names the issue is untouched", async () => {
@@ -72,7 +97,7 @@ test("pull_request.opened: rules route each key to its own tracker", async () =>
   assert.equal(updates.length, 1);
   assert.ok(
     updates[0].args.body.startsWith(
-      "[session #220](https://github.com/example-org/example-repo/issues/220)\n\n",
+      "[session #220](https://github.com/example-org/example-repo/issues/220) <!-- issue-links -->\n\n",
     ),
   );
 });
@@ -82,7 +107,7 @@ test("pull_request.opened: stacked keys are linked on one line", async () => {
   assert.equal(updates.length, 1);
   assert.ok(
     updates[0].args.body.startsWith(
-      "[session #998](https://github.com/example-org/example-repo/issues/998) ‧ [ABC-1024](https://example.atlassian.net/browse/ABC-1024)\n\n",
+      "[session #998](https://github.com/example-org/example-repo/issues/998) ‧ [ABC-1024](https://example.atlassian.net/browse/ABC-1024) <!-- issue-links -->\n\n",
     ),
   );
 });
@@ -94,7 +119,7 @@ test("pull_request.opened: the separator is configurable", async () => {
   assert.equal(updates.length, 1);
   assert.ok(
     updates[0].args.body.startsWith(
-      "[ABC-334](https://example.atlassian.net/browse/ABC-334) · [XY-123](https://example.atlassian.net/browse/XY-123)\n\n",
+      "[ABC-334](https://example.atlassian.net/browse/ABC-334) · [XY-123](https://example.atlassian.net/browse/XY-123) <!-- issue-links -->\n\n",
     ),
   );
 });
@@ -102,7 +127,7 @@ test("pull_request.opened: the separator is configurable", async () => {
 test("pull_request.opened: the title supplies the key when the branch doesn't", async () => {
   const updates = await open(makePr({ branch: "bearer-token-guard", title: "XY-1183 - Reject malformed bearer tokens" }));
   assert.equal(updates.length, 1);
-  assert.ok(updates[0].args.body.startsWith("[XY-1183](https://example.atlassian.net/browse/XY-1183)\n\n"));
+  assert.ok(updates[0].args.body.startsWith("[XY-1183](https://example.atlassian.net/browse/XY-1183) <!-- issue-links -->\n\n"));
 });
 
 test("pull_request.opened: drafts get the link too", async () => {
@@ -113,7 +138,7 @@ test("pull_request.opened: drafts get the link too", async () => {
 test("pull_request.opened: an empty description becomes the link alone", async () => {
   const updates = await open(makePr({ body: null }));
   assert.equal(updates.length, 1);
-  assert.equal(updates[0].args.body, "[ABC-5752](https://example.atlassian.net/browse/ABC-5752)");
+  assert.equal(updates[0].args.body, "[ABC-5752](https://example.atlassian.net/browse/ABC-5752) <!-- issue-links -->");
 });
 
 test("pull_request.opened: nothing happens without issue_links.automatic", async () => {
@@ -150,7 +175,7 @@ test("pull_request.opened: a description edited since delivery isn't clobbered",
   assert.equal(updates.length, 1);
   assert.equal(
     updates[0].args.body,
-    "[ABC-5752](https://example.atlassian.net/browse/ABC-5752)\n\nRewritten while the webhook was in flight.",
+    "[ABC-5752](https://example.atlassian.net/browse/ABC-5752) <!-- issue-links -->\n\nRewritten while the webhook was in flight.",
   );
 });
 
