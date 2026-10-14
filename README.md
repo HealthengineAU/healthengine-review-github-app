@@ -56,6 +56,8 @@
   - On `pull_request.opened` and `pull_request.edited`, when the branch name or
     title names an issue (`ABC-123`) and the description neither mentions nor
     links it — so a rewritten description gets the link back
+  - The line it adds carries an invisible `<!-- issue-links -->` marker, so a
+    later pass updates that line in place rather than adding another
   - `issue_links.rules` says which keys count, where each points and how it's
     labelled, so `cs-123` and `thing-session-220` can reach different trackers
     — a key no rule claims (`node-21`, `hono-4-13-8`) is never linked
