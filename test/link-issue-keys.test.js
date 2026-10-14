@@ -5,6 +5,7 @@ import {
   extractReferences,
   mentionsReference,
   missingReferences,
+  updatedDescription,
   withIssueLinks,
 } from "../lib/link-issue-keys.js";
 import { normalizeIssueLinkRules } from "../lib/config.js";
@@ -16,8 +17,7 @@ const RULES = normalizeIssueLinkRules([
 
 const jira = (key, number) => ({
   token: `${key}-${number}`,
-  label: `${key}-${number}`,
-  url: `https://example.atlassian.net/browse/${key}-${number}`,
+  link: `[${key}-${number}](https://example.atlassian.net/browse/${key}-${number})`,
 });
 
 // ---------------------------------------------------------------------------
@@ -61,8 +61,7 @@ test("extractReferences: a key can span hyphens, so near-identical keys don't co
   assert.deepEqual(extractReferences("claude/thing-session-220-storybook-port", RULES), [
     {
       token: "THING-SESSION-220",
-      label: "session #220",
-      url: "https://github.com/example-org/example-repo/issues/220",
+      link: "[session #220](https://github.com/example-org/example-repo/issues/220)",
     },
   ]);
   // Same trailing segment, different owner — no rule claims it.
@@ -75,8 +74,21 @@ test("extractReferences: the longest key a rule claims wins", () => {
     { keys: ["SESSION"], url: "https://example.test/short/$NUMBER" },
     { keys: ["THING-SESSION"], url: "https://example.test/long/$NUMBER" },
   ]);
-  assert.equal(extractReferences("thing-session-220", rules)[0].url, "https://example.test/long/220");
-  assert.equal(extractReferences("other-session-220", rules)[0].url, "https://example.test/short/220");
+  assert.equal(extractReferences("thing-session-220", rules)[0].link, "[THING-SESSION-220](https://example.test/long/220)");
+  assert.equal(extractReferences("other-session-220", rules)[0].link, "[SESSION-220](https://example.test/short/220)");
+});
+
+test("extractReferences: keys stack back to back", () => {
+  assert.deepEqual(extractReferences("abc-334-xy-123-my-feature", RULES), [jira("ABC", 334), jira("XY", 123)]);
+  assert.deepEqual(extractReferences("thing-session-998-abc-1024-fix-the-bug", RULES), [
+    {
+      token: "THING-SESSION-998",
+      link: "[session #998](https://github.com/example-org/example-repo/issues/998)",
+    },
+    jira("ABC", 1024),
+  ]);
+  assert.deepEqual(extractReferences("ABC-284a-xy-5", RULES), [jira("ABC", 284), jira("XY", 5)]);
+  assert.deepEqual(extractReferences("ABC-284-a-5", RULES), [jira("ABC", 284)]);
 });
 
 test("extractReferences: a key followed by a sentence still counts", () => {
@@ -90,7 +102,18 @@ test("extractReferences: $key substitutes the lower-cased key", () => {
     { keys: ["ABC"], label: "$key-$NUMBER", url: "https://example.test/$key/$NUMBER" },
   ]);
   assert.deepEqual(extractReferences("ABC-7", rules), [
-    { token: "ABC-7", label: "abc-7", url: "https://example.test/abc/7" },
+    { token: "ABC-7", link: "[abc-7](https://example.test/abc/7)" },
+  ]);
+});
+
+test("extractReferences: a link template renders as given", () => {
+  const rules = normalizeIssueLinkRules([
+    { keys: ["THING-SESSION"], link: "[Thing session #$NUMBER](https://example.test/sessions/$NUMBER)" },
+    { keys: ["ABC"], link: "$KEY-$NUMBER on example.test" },
+  ]);
+  assert.deepEqual(extractReferences("thing-session-5-abc-7", rules), [
+    { token: "THING-SESSION-5", link: "[Thing session #5](https://example.test/sessions/5)" },
+    { token: "ABC-7", link: "ABC-7 on example.test" },
   ]);
 });
 
@@ -119,11 +142,23 @@ test("mentionsReference: bare text, any case, and the link itself all count", ()
   );
 });
 
+test("mentionsReference: a url with parentheses is matched whole", () => {
+  const reference = { token: "ABC-1", link: "[Issue](https://tracker.test/(tenant)/issues/1)" };
+  assert.equal(mentionsReference("See https://tracker.test/(tenant)/issues/1", reference), true);
+  assert.equal(mentionsReference("See https://tracker.test/(tenant)/issues/2", reference), false);
+});
+
+test("mentionsReference: a link that isn't markdown is spotted whole", () => {
+  const reference = { token: "ABC-7", link: "ABC-7 on example.test" };
+  assert.equal(mentionsReference("See ABC-7 on example.test", reference), true);
+  assert.equal(mentionsReference("See abc-7", reference), true);
+  assert.equal(mentionsReference("See example.test", reference), false);
+});
+
 test("mentionsReference: a url-only reference is spotted by its url", () => {
   const reference = {
     token: "SESSION-220",
-    label: "session #220",
-    url: "https://github.com/example-org/example-repo/issues/220",
+    link: "[session #220](https://github.com/example-org/example-repo/issues/220)",
   };
   assert.equal(mentionsReference("See https://github.com/example-org/example-repo/issues/220", reference), true);
   assert.equal(mentionsReference("See issue 220", reference), false);
@@ -192,29 +227,68 @@ test("withIssueLinks: prepends the link above the existing description", () => {
       body: "Malformed bearer tokens (empty strings, ...",
       references: [jira("ABC", 5752)],
     }),
-    "[ABC-5752](https://example.atlassian.net/browse/ABC-5752)\n\nMalformed bearer tokens (empty strings, ...",
+    "[ABC-5752](https://example.atlassian.net/browse/ABC-5752) <!-- issue-links -->\n\nMalformed bearer tokens (empty strings, ...",
   );
 });
 
 test("withIssueLinks: leading indentation in the description is preserved", () => {
   assert.equal(
     withIssueLinks({ body: "    indented code block\n", references: [jira("ABC", 5752)] }),
-    "[ABC-5752](https://example.atlassian.net/browse/ABC-5752)\n\n    indented code block\n",
+    "[ABC-5752](https://example.atlassian.net/browse/ABC-5752) <!-- issue-links -->\n\n    indented code block\n",
   );
   // Leading blank lines would otherwise stack up under the link.
   assert.equal(
     withIssueLinks({ body: "\n\nSummary.", references: [jira("ABC", 5752)] }),
-    "[ABC-5752](https://example.atlassian.net/browse/ABC-5752)\n\nSummary.",
+    "[ABC-5752](https://example.atlassian.net/browse/ABC-5752) <!-- issue-links -->\n\nSummary.",
+  );
+});
+
+test("withIssueLinks: several links share a line, joined by the separator", () => {
+  const references = [jira("ABC", 951), jira("XY", 1183)];
+  assert.equal(
+    withIssueLinks({ body: "", references }),
+    "[ABC-951](https://example.atlassian.net/browse/ABC-951) ‧ [XY-1183](https://example.atlassian.net/browse/XY-1183) <!-- issue-links -->",
+  );
+  assert.equal(
+    withIssueLinks({ body: "", references, separator: "|" }),
+    "[ABC-951](https://example.atlassian.net/browse/ABC-951) | [XY-1183](https://example.atlassian.net/browse/XY-1183) <!-- issue-links -->",
   );
 });
 
 test("withIssueLinks: an empty description becomes just the links", () => {
   assert.equal(
-    withIssueLinks({ body: "", references: [jira("ABC", 951), jira("XY", 1183)] }),
-    "[ABC-951](https://example.atlassian.net/browse/ABC-951) [XY-1183](https://example.atlassian.net/browse/XY-1183)",
-  );
-  assert.equal(
     withIssueLinks({ body: null, references: [jira("ABC", 951)] }),
-    "[ABC-951](https://example.atlassian.net/browse/ABC-951)",
+    "[ABC-951](https://example.atlassian.net/browse/ABC-951) <!-- issue-links -->",
   );
+});
+
+test("withIssueLinks: a marked line is replaced in place", () => {
+  const body = "Intro.\n\n[ABC-1](https://example.atlassian.net/browse/ABC-1) <!-- issue-links -->\n\nRest.";
+  assert.equal(
+    withIssueLinks({ body, references: [jira("ABC", 1), jira("XY", 2)] }),
+    "Intro.\n\n[ABC-1](https://example.atlassian.net/browse/ABC-1) ‧ [XY-2](https://example.atlassian.net/browse/XY-2) <!-- issue-links -->\n\nRest.",
+  );
+});
+
+// ---------------------------------------------------------------------------
+// updatedDescription
+// ---------------------------------------------------------------------------
+
+const naming = { branch: "ABC-1-xy-2-feature", title: "Feature", rules: RULES };
+const LINE = "[ABC-1](https://example.atlassian.net/browse/ABC-1) ‧ [XY-2](https://example.atlassian.net/browse/XY-2) <!-- issue-links -->";
+
+test("updatedDescription: adds the line when a reference is missing", () => {
+  assert.equal(updatedDescription({ ...naming, body: "Summary." }), `${LINE}\n\nSummary.`);
+  assert.equal(updatedDescription({ ...naming, body: "Part of ABC-1." }), `${LINE}\n\nPart of ABC-1.`);
+});
+
+test("updatedDescription: nothing to do when every reference is already mentioned", () => {
+  assert.equal(updatedDescription({ ...naming, body: "Part of ABC-1 and XY-2." }), null);
+  assert.equal(updatedDescription({ ...naming, body: `${LINE}\n\nSummary.` }), null);
+  assert.equal(updatedDescription({ branch: "node-21", title: "Bump", body: "", rules: RULES }), null);
+});
+
+test("updatedDescription: a stale marked line is brought up to date", () => {
+  const stale = "[ABC-1](https://example.atlassian.net/browse/ABC-1) <!-- issue-links -->\n\nSummary.";
+  assert.equal(updatedDescription({ ...naming, body: stale }), `${LINE}\n\nSummary.`);
 });
