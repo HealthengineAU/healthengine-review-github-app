@@ -141,6 +141,12 @@ test("mentionsReference: bare text, any case, and the link itself all count", ()
   );
 });
 
+test("mentionsReference: a url with parentheses is matched whole", () => {
+  const reference = { token: "ABC-1", link: "[Issue](https://tracker.test/(tenant)/issues/1)" };
+  assert.equal(mentionsReference("See https://tracker.test/(tenant)/issues/1", reference), true);
+  assert.equal(mentionsReference("See https://tracker.test/(tenant)/issues/2", reference), false);
+});
+
 test("mentionsReference: a link that isn't markdown is spotted whole", () => {
   const reference = { token: "ABC-7", link: "ABC-7 on example.test" };
   assert.equal(mentionsReference("See ABC-7 on example.test", reference), true);
