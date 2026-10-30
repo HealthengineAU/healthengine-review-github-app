@@ -7,16 +7,18 @@ import { register } from "../lib/ui-review-approvals.js";
 const SHA = "3897e0b2a142230837e29e68dc4b18a8d318166e";
 const VIEWER = (fp) => `https://visreg.he0.io/?r=catalyst&b=feature-x${fp ? `&fp=${fp}` : ""}`;
 const COMMENT_URL = "https://github.com/acme/catalyst/pull/57#issuecomment-1";
+const FOUND_PIXEL = { login: "found-pixel[bot]" };
 const TEAMS = { pingu: ["dev", "penny"], jarvis: ["jill"], marketplace: ["mia"], "patient-accounts": ["pat"] };
 
 const ownersTag = (entries) => `<!-- ui-owners${entries.map((e) => ` ${e}`).join("")} -->`;
-const comment = (entries, { fp, extra = [] } = {}) => ({
+const comment = (entries, { fp, extra = [], user = FOUND_PIXEL } = {}) => ({
   id: 1,
+  user,
   html_url: COMMENT_URL,
   body: ["<!-- found-pixel-comment -->", ...(fp ? [`<!-- ui-review fp=${fp} -->`] : []), ownersTag(entries), ...extra, "## 📘 UI Review"].join("\n"),
 });
 const pr = ({ draft = false, state = "open", author = "dev" } = {}) => ({ number: 57, draft, state, user: { login: author }, head: { sha: SHA } });
-const toolStatus = ({ state = "success", fp } = {}) => ({ context: "UI Review", state, description: "3 modified", target_url: VIEWER(fp) });
+const toolStatus = ({ state = "success", fp } = {}) => ({ context: "UI Review", state, description: "3 modified", target_url: VIEWER(fp), creator: FOUND_PIXEL });
 const approval = (login, id = 1) => ({ id, state: "APPROVED", user: { login } });
 
 function setup({ current = pr(), comments = [], timeline = [], reviews = [], statuses = [toolStatus()] } = {}) {
@@ -138,6 +140,13 @@ test("PR events without found-pixel's owners tag stop after reading the comments
   const t = setup({ comments: [{ id: 1, body: "<!-- found-pixel-comment -->\n## 📘 UI Review" }] });
   await t.onReview();
   assert.deepEqual(t.octokit.calls.map((c) => c.method), ["paginate:rest.issues.listComments"]);
+});
+
+test("owners tags from anyone but found-pixel are ignored", async () => {
+  const t = setup({ comments: [comment(["@acme/jarvis", "@no-such-user"], { user: { login: "mallory" } })] });
+  await t.onReview();
+  assert.deepEqual(t.invited(), []);
+  assert.deepEqual(t.posted(), []);
 });
 
 test("closed PRs are left alone", async () => {
