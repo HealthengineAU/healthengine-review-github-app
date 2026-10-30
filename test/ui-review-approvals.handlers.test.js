@@ -59,11 +59,11 @@ function setup({ prs = [pr()], current, comments = [], comment, statuses, user =
 const onStatus = (t, overrides = {}) => t.dispatch("status", t.context(statusPayload(overrides)));
 const withEvent = (overrides = {}, others = []) => [status(overrides), ...others];
 
-test("status: pending without an approval adds the checkbox and points the status at the comment", async () => {
+test("status: pending without an approval adds the checkbox and keeps the status on the viewer", async () => {
   const t = setup({ comments: [rawComment(1, "cb4f8904")], statuses: withEvent() });
   await onStatus(t);
   assert.deepEqual(t.calls("rest.issues.updateComment").map((a) => [a.comment_id, a.body]), [[1, toolComment(1, "cb4f8904").body]]);
-  assert.deepEqual(t.posted(), [["UI Review", "pending", "Review needed - 3 modified", COMMENT_URL(1)]]);
+  assert.deepEqual(t.posted(), [["UI Review", "pending", "3 modified - Review required", URL("cb4f8904")]]);
   assert.equal(t.calls("rest.repos.createCommitStatus")[0].sha, SHA);
 });
 
@@ -71,6 +71,10 @@ test("status: the app's own rewrites and other contexts are ignored", async () =
   const t = setup({ statuses: withEvent() });
   await onStatus(t, { description: "Review needed - 3 modified" });
   await onStatus(t, { description: "Needs Jarvis code owner approval - 3 modified" });
+  await onStatus(t, { description: "3 modified - Review required" });
+  await onStatus(t, { description: "✓ 3 modified" });
+  await onStatus(t, { description: "3 modified - Jarvis approval needed" });
+  await onStatus(t, { description: "3 modified - Jarvis approved" });
   await onStatus(t, { context: "AI Review" });
   assert.equal(t.octokit.calls.length, 0);
 });
@@ -104,7 +108,7 @@ test("status: a stamp for the same fingerprint carries the approval forward", as
   const t = setup({ comments: [rawComment(1, "cb4f8904", { stampFp: "cb4f8904" })], statuses: withEvent() });
   await onStatus(t);
   assert.deepEqual(t.calls("rest.issues.updateComment").map((a) => a.body), [approvedComment(1, "cb4f8904").body]);
-  assert.deepEqual(t.posted(), [["UI Review", "success", "✓ Reviewed by Reece Como - 3 modified", URL("cb4f8904")]]);
+  assert.deepEqual(t.posted(), [["UI Review", "success", "✓ 3 modified", URL("cb4f8904")]]);
 });
 
 test("status: an already approved comment is left alone", async () => {
@@ -125,7 +129,7 @@ test("status: found-pixel's fresh prompt with a carried stamp for the same finge
   const t = setup({ comments: [toolComment(1, "cb4f8904", { stampFp: "cb4f8904" })], statuses: withEvent() });
   await onStatus(t);
   assert.deepEqual(t.calls("rest.issues.updateComment").map((a) => a.body), [approvedComment(1, "cb4f8904").body]);
-  assert.deepEqual(t.posted(), [["UI Review", "success", "✓ Reviewed by Reece Como - 3 modified", URL("cb4f8904")]]);
+  assert.deepEqual(t.posted(), [["UI Review", "success", "✓ 3 modified", URL("cb4f8904")]]);
 });
 
 test("status: a ticked box without a stamp stays pending and keeps the box", async () => {
@@ -139,7 +143,7 @@ test("status: without a comment for the fingerprint only the status is touched",
   const t = setup({ comments: [rawComment(1, "11111111")], statuses: withEvent() });
   await onStatus(t);
   assert.equal(t.calls("rest.issues.updateComment").length, 0);
-  assert.deepEqual(t.posted(), [["UI Review", "pending", "Review needed - 3 modified", URL("cb4f8904")]]);
+  assert.deepEqual(t.posted(), [["UI Review", "pending", "3 modified - Review required", URL("cb4f8904")]]);
 });
 
 test("status: each suite is approved by its own comment", async () => {
@@ -149,7 +153,7 @@ test("status: each suite is approved by its own comment", async () => {
   });
   await onStatus(t, { context: "UI Review (admin)", fp: "22222222" });
   assert.equal(t.calls("rest.issues.updateComment").length, 0);
-  assert.deepEqual(t.posted(), [["UI Review (admin)", "success", "✓ Reviewed by Reece Como - 3 modified", URL("22222222")]]);
+  assert.deepEqual(t.posted(), [["UI Review (admin)", "success", "✓ 3 modified", URL("22222222")]]);
 });
 
 const editPayload = (from, to, { id = 1, login = "reececomo" } = {}) => ({
@@ -166,7 +170,7 @@ test("issue_comment.edited: ticking approves the comment and flips the pending s
   const t = setup({
     comment: ticked,
     statuses: [
-      { ...status({ description: "Review needed - 3 modified" }), target_url: COMMENT_URL(1) },
+      { ...status({ description: "3 modified - Review required" }), target_url: COMMENT_URL(1) },
       status({ context: "UI Review (admin)", description: "1 added", fp: "1a2b3c4d" }),
       status(),
       status({ context: "UI Review (done)", state: "success", description: "No changes", fp: null }),
@@ -175,18 +179,17 @@ test("issue_comment.edited: ticking approves the comment and flips the pending s
   await onEdit(t, toolComment(1, "cb4f8904"), ticked);
 
   assert.deepEqual(t.calls("rest.issues.updateComment").map((a) => [a.comment_id, a.body]), [[1, approvedComment(1, "cb4f8904").body]]);
-  assert.deepEqual(t.posted(), [["UI Review", "success", "✓ Reviewed by Reece Como - 3 modified", URL("cb4f8904")]]);
+  assert.deepEqual(t.posted(), [["UI Review", "success", "✓ 3 modified", URL("cb4f8904")]]);
 });
 
 test("issue_comment.edited: display names are sanitised and fall back to the login", async () => {
   const ticked = toolComment(1, "cb4f8904", { line: LINES.ticked });
   const t = setup({ comment: ticked, statuses: [status()], user: { name: null } });
   await onEdit(t, toolComment(1, "cb4f8904"), ticked);
-  assert.equal(t.posted()[0][2], "✓ Reviewed by reececomo - 3 modified");
+  assert.ok(t.calls("rest.issues.updateComment")[0].body.endsWith(STAMP("cb4f8904", "reececomo")));
 
   const u = setup({ comment: ticked, statuses: [status()], user: { name: "Alice <alice@example.com>" } });
   await onEdit(u, toolComment(1, "cb4f8904"), ticked);
-  assert.equal(u.posted()[0][2], "✓ Reviewed by Alice alice@example.com - 3 modified");
   assert.ok(u.calls("rest.issues.updateComment")[0].body.endsWith(STAMP("cb4f8904", "Alice alice@example.com")));
 });
 
@@ -195,8 +198,8 @@ test("issue_comment.edited: unticking puts the comment back and reverts approved
   const t = setup({
     comment: unticked,
     statuses: [
-      status({ state: "success", description: "✓ Reviewed by Reece Como - 3 modified" }),
-      status({ context: "UI Review (admin)", state: "success", description: "✓ Reviewed by Reece Como - 1 added", fp: "1a2b3c4d" }),
+      status({ state: "success", description: "✓ 3 modified" }),
+      status({ context: "UI Review (admin)", state: "success", description: "✓ 1 added", fp: "1a2b3c4d" }),
       status(),
       status({ context: "UI Review (admin)", description: "1 added", fp: "1a2b3c4d" }),
     ],
@@ -204,7 +207,7 @@ test("issue_comment.edited: unticking puts the comment back and reverts approved
   await onEdit(t, approvedComment(1, "cb4f8904"), unticked);
 
   assert.deepEqual(t.calls("rest.issues.updateComment").map((a) => a.body), [toolComment(1, "cb4f8904").body]);
-  assert.deepEqual(t.posted(), [["UI Review", "pending", "Review needed - 3 modified", COMMENT_URL(1)]]);
+  assert.deepEqual(t.posted(), [["UI Review", "pending", "3 modified - Review required", URL("cb4f8904")]]);
 });
 
 test("issue_comment.edited: rewrites that don't just toggle the box are ignored", async () => {

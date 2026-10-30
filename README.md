@@ -75,24 +75,23 @@
 
 - Approves UI changes by checkbox (`UI Review` / `UI Review (<suite>)` statuses from
   found-pixel, when it posts `pending` with `fp=` in the URL):
-  - Rewrites the status to `Review needed - …`, linking to found-pixel's PR comment (the one
-    with the same fingerprint), and adds a **Changes Reviewed** checkbox to the top of the
-    comment if found-pixel hasn't
+  - Rewrites the status to `… - Review required`, still linking to found-pixel's viewer, and adds
+    a **Changes Reviewed** checkbox to the top of found-pixel's PR comment (the one with the same
+    fingerprint) if found-pixel hasn't
   - Ticking it rewrites the line to `~Changes Reviewed~ - Reviewed by @<login>`, stamps the
     comment with the fingerprint, and flips the pending statuses with that fingerprint to
-    `✓ Reviewed by <name> - …`, linking back to found-pixel's review. Anyone able to edit the
-    comment can approve
+    `✓ …`. Anyone able to edit the comment can approve
   - found-pixel keeps the stamp when it rewrites the comment, so later builds with the same
     fingerprint are approved again; a different fingerprint drops the stamp and asks again
   - Unticking puts the original checkbox back, removes the stamp and puts the approved
-    statuses back to `Review needed`
-  - The app recognises its own statuses by their description prefix and acts only
+    statuses back to `… - Review required`
+  - The app recognises its own statuses by their description's `✓ ` prefix or suffix and acts only
     on the latest status for a context, so replayed or stale events are ignored
 - Requires code owner approval of UI changes, when found-pixel's `codeowners` is on (its comment
   carries `<!-- ui-owners @org/team @org/a,@org/b … -->`, one CODEOWNERS entry per space):
-  - Holds `UI Review` pending (`Needs Jarvis code owner approval - …`, alongside any
-    `Review needed` / `Reviewed by …`) until each entry has an approving PR review, at any point
-    and even if dismissed since, from a member of one of its teams (or the user it names)
+  - Holds `UI Review` pending (`… - Pingu, Jarvis approval needed`, after any `Review required`)
+    until each entry has an approving PR review, at any point and even if dismissed since,
+    from a member of one of its teams (or the user it names)
   - Entries the PR author belongs to don't need approving
   - Invites the outstanding owners once the PR isn't a draft, but never anyone asked before, so
     removing a request sticks
