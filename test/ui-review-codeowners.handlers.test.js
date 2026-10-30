@@ -10,13 +10,15 @@ const COMMENT_URL = "https://github.com/acme/catalyst/pull/57#issuecomment-1";
 const TEAMS = { pingu: ["dev", "penny"], jarvis: ["jill"], marketplace: ["mia"], "patient-accounts": ["pat"] };
 
 const ownersTag = (entries) => `<!-- ui-owners${entries.map((e) => ` ${e}`).join("")} -->`;
+const TOOL = { login: "found-pixel" };
 const comment = (entries, { fp, extra = [] } = {}) => ({
   id: 1,
+  user: TOOL,
   html_url: COMMENT_URL,
   body: ["<!-- found-pixel-comment -->", ...(fp ? [`<!-- ui-review fp=${fp} -->`] : []), ownersTag(entries), ...extra, "## 📘 UI Review"].join("\n"),
 });
 const pr = ({ draft = false, state = "open", author = "dev" } = {}) => ({ number: 57, draft, state, user: { login: author }, head: { sha: SHA } });
-const toolStatus = ({ state = "success", fp } = {}) => ({ context: "UI Review", state, description: "3 modified", target_url: VIEWER(fp) });
+const toolStatus = ({ state = "success", fp } = {}) => ({ context: "UI Review", state, description: "3 modified", target_url: VIEWER(fp), creator: TOOL });
 const approval = (login, id = 1) => ({ id, state: "APPROVED", user: { login } });
 
 function setup({ current = pr(), comments = [], timeline = [], reviews = [], statuses = [toolStatus()] } = {}) {

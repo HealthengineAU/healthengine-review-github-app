@@ -17,8 +17,11 @@ const LINES = {
 
 const COMMENT_URL = (id) => `https://github.com/acme/catalyst/pull/57#issuecomment-${id}`;
 
-const toolComment = (id, fp, { line = LINES.prompt, stampFp, suite } = {}) => ({
+const TOOL = { login: "found-pixel" };
+
+const toolComment = (id, fp, { line = LINES.prompt, stampFp, suite, user = TOOL } = {}) => ({
   id,
+  user,
   html_url: COMMENT_URL(id),
   body: [
     suite ? `<!-- visreg-comment:${suite} -->` : "<!-- found-pixel-comment -->",
@@ -34,7 +37,7 @@ const approvedComment = (id, fp, opts = {}) => toolComment(id, fp, { line: LINES
 const pr = ({ number = 57, state = "open" } = {}) => ({ number, state, head: { sha: SHA } });
 
 const status = ({ context = "UI Review", state = "pending", description = "3 modified", fp = "cb4f8904" } = {}) => ({
-  context, state, description, target_url: URL(fp),
+  context, state, description, target_url: URL(fp), creator: TOOL,
 });
 
 const statusPayload = (overrides = {}) => ({ ...status(overrides), sha: SHA, repository: { name: "catalyst" } });
@@ -142,6 +145,19 @@ test("status: without a comment for the fingerprint only the status is touched",
   assert.deepEqual(t.posted(), [["UI Review", "pending", "Review needed - 3 modified", URL("cb4f8904")]]);
 });
 
+test("status: a fingerprint comment from anyone but the tool is ignored", async () => {
+  const forged = approvedComment(2, "cb4f8904", { user: { login: "dev" } });
+  const t = setup({ comments: [forged, rawComment(1, "cb4f8904")], statuses: withEvent() });
+  await onStatus(t);
+  assert.deepEqual(t.calls("rest.issues.updateComment").map((a) => a.comment_id), [1]);
+  assert.deepEqual(t.posted(), [["UI Review", "pending", "Review needed - 3 modified", COMMENT_URL(1)]]);
+
+  const u = setup({ comments: [forged], statuses: withEvent() });
+  await onStatus(u);
+  assert.equal(u.calls("rest.issues.updateComment").length, 0);
+  assert.deepEqual(u.posted(), [["UI Review", "pending", "Review needed - 3 modified", URL("cb4f8904")]]);
+});
+
 test("status: each suite is approved by its own comment", async () => {
   const t = setup({
     comments: [rawComment(1, "cb4f8904"), approvedComment(2, "22222222", { suite: "admin" })],
@@ -176,6 +192,14 @@ test("issue_comment.edited: ticking approves the comment and flips the pending s
 
   assert.deepEqual(t.calls("rest.issues.updateComment").map((a) => [a.comment_id, a.body]), [[1, approvedComment(1, "cb4f8904").body]]);
   assert.deepEqual(t.posted(), [["UI Review", "success", "✓ Reviewed by Reece Como - 3 modified", URL("cb4f8904")]]);
+});
+
+test("issue_comment.edited: ticking a fingerprint comment the tool didn't post does nothing", async () => {
+  const ticked = toolComment(1, "cb4f8904", { line: LINES.ticked, user: { login: "dev" } });
+  const t = setup({ comment: ticked, statuses: [status()] });
+  await onEdit(t, toolComment(1, "cb4f8904", { user: { login: "dev" } }), ticked, { login: "dev" });
+  assert.equal(t.calls("rest.issues.updateComment").length, 0);
+  assert.equal(t.posted().length, 0);
 });
 
 test("issue_comment.edited: display names are sanitised and fall back to the login", async () => {
