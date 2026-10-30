@@ -46,14 +46,14 @@ test("invites other teams' owners and holds UI Review until they approve", async
   const t = setup({ comments: [comment(["@acme/jarvis", "@acme/pingu"])] });
   await t.onStatus();
   assert.deepEqual(t.invited(), [{ reviewers: [], team_reviewers: ["jarvis"] }]);
-  assert.deepEqual(t.posted(), [["pending", "Needs Jarvis code owner approval - 3 modified", COMMENT_URL]]);
+  assert.deepEqual(t.posted(), [["pending", "3 modified - Jarvis approval needed", VIEWER()]]);
 });
 
 test("drafts are held but only invited once ready for review", async () => {
   const draft = setup({ current: pr({ draft: true }), comments: [comment(["@acme/jarvis"])] });
   await draft.onStatus();
   assert.deepEqual(draft.invited(), []);
-  assert.deepEqual(draft.posted(), [["pending", "Needs Jarvis code owner approval - 3 modified", COMMENT_URL]]);
+  assert.deepEqual(draft.posted(), [["pending", "3 modified - Jarvis approval needed", VIEWER()]]);
 
   const ready = setup({ comments: [comment(["@acme/jarvis"])] });
   await ready.onReady();
@@ -67,7 +67,7 @@ test("a required review and outstanding code owners show together", async () => 
     statuses: [toolStatus({ state: "pending", fp: "cb4f8904" })],
   });
   await t.onStatus();
-  assert.deepEqual(t.posted(), [["pending", "Needs Jarvis code owner approval, Reviewed by Reece Como - 3 modified", COMMENT_URL]]);
+  assert.deepEqual(t.posted(), [["pending", "✓ 3 modified - Jarvis approval needed", VIEWER("cb4f8904")]]);
 });
 
 test("a PR approval from any member, at any point, clears the owner", async () => {
@@ -83,7 +83,7 @@ test("a PR approval from any member, at any point, clears the owner", async () =
   });
   await t.onReview();
   assert.deepEqual(t.invited(), []);
-  assert.deepEqual(t.posted(), [["success", "✓ Approved by Jarvis, Marketplace/Patient Accounts - 3 modified", VIEWER()]]);
+  assert.deepEqual(t.posted(), [["success", "3 modified - Jarvis, Marketplace/Patient Accounts approved", VIEWER()]]);
 });
 
 test("comments and approvals from outside the team don't count", async () => {
@@ -94,7 +94,7 @@ test("comments and approvals from outside the team don't count", async () => {
   });
   await t.onReview();
   assert.deepEqual(t.invited(), [{ reviewers: ["reececomo"], team_reviewers: [] }]);
-  assert.deepEqual(t.posted(), [["pending", "Needs Jarvis, reececomo code owner approval - 3 modified", COMMENT_URL]]);
+  assert.deepEqual(t.posted(), [["pending", "3 modified - Jarvis, reececomo approval needed", VIEWER()]]);
 });
 
 test("the author's own teams and the author are excluded, leaving found-pixel's status alone", async () => {
@@ -114,7 +114,7 @@ test("never re-invites an owner asked before, even if removed, but still waits f
   });
   await t.onStatus();
   assert.deepEqual(t.invited(), []);
-  assert.deepEqual(t.posted(), [["pending", "Needs Jarvis code owner approval - 3 modified", COMMENT_URL]]);
+  assert.deepEqual(t.posted(), [["pending", "3 modified - Jarvis approval needed", VIEWER()]]);
 });
 
 test("a failed invite is logged and the status still held", async () => {
@@ -131,7 +131,7 @@ test("a failed invite is logged and the status still held", async () => {
     console.error = original;
   }
   assert.deepEqual(errors, [["Code owner invite failed for acme/catalyst#57", 422]]);
-  assert.deepEqual(t.posted(), [["pending", "Needs Jarvis code owner approval - 3 modified", COMMENT_URL]]);
+  assert.deepEqual(t.posted(), [["pending", "3 modified - Jarvis approval needed", VIEWER()]]);
 });
 
 test("PR events without found-pixel's owners tag stop after reading the comments", async () => {
