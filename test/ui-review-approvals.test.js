@@ -85,31 +85,36 @@ test("parseStamp tolerates a missing name", () => {
 
 test("uiReviewStatus combines a required review with outstanding code owners", () => {
   const tool = { state: "pending", description: "3 modified", target_url: "https://v/?fp=cb4f8904" };
-  const status = (opts) => uiReviewStatus(tool, { commentUrl: "https://c", ...opts });
+  const status = (opts) => uiReviewStatus(tool, opts);
   const reece = { approval: { name: "Reece Como" } };
   const jarvis = [["@acme/jarvis"]];
 
-  assert.deepEqual(status({ review: { approval: null } }), { state: "pending", description: "Review needed - 3 modified", target_url: "https://c" });
-  assert.deepEqual(status({ review: reece }), { state: "success", description: "✓ Reviewed by Reece Como - 3 modified", target_url: tool.target_url });
-  assert.equal(status({ review: reece, owners: { pending: jarvis, approved: [] } }).description, "Needs Jarvis code owner approval, Reviewed by Reece Como - 3 modified");
-  assert.equal(status({ review: { approval: null }, owners: { pending: [["@acme/jarvis"], ["@reececomo"]], approved: [] } }).description, "Needs Jarvis, reececomo code owner approval, Review needed - 3 modified");
+  assert.deepEqual(status({ review: { approval: null } }), { state: "pending", description: "3 modified - Review required", target_url: tool.target_url });
+  assert.deepEqual(status({ review: reece }), { state: "success", description: "✓ 3 modified", target_url: tool.target_url });
+  assert.equal(status({ review: reece, owners: { pending: jarvis, approved: [] } }).description, "✓ 3 modified - Jarvis approval needed");
+  assert.equal(status({ review: { approval: null }, owners: { pending: [["@acme/jarvis"], ["@reececomo"]], approved: [] } }).description, "3 modified - Review required - Jarvis, reececomo approval needed");
   assert.deepEqual(status({ review: reece, owners: { pending: [], approved: [["@acme/marketplace", "@acme/patient-accounts"]] } }), {
     state: "success",
-    description: "✓ Reviewed by Reece Como, Approved by Marketplace/Patient Accounts - 3 modified",
+    description: "✓ 3 modified - Marketplace/Patient Accounts approved",
     target_url: tool.target_url,
   });
 
   const done = { state: "success", description: "3 modified", target_url: "https://v" };
-  assert.deepEqual(uiReviewStatus(done, { review: null, owners: { pending: jarvis, approved: [] }, commentUrl: "https://c" }), {
-    state: "pending", description: "Needs Jarvis code owner approval - 3 modified", target_url: "https://c",
+  assert.deepEqual(uiReviewStatus(done, { review: null, owners: { pending: jarvis, approved: [] } }), {
+    state: "pending", description: "3 modified - Jarvis approval needed", target_url: "https://v",
   });
   assert.deepEqual(uiReviewStatus(done, { review: null, owners: { pending: [], approved: [] } }), done);
   assert.deepEqual(uiReviewStatus(done, { review: null, owners: null }), done);
 });
 
 test("uiReviewStatus stays within 140 chars", () => {
-  const tool = { state: "pending", description: "B".repeat(100), target_url: "https://v" };
-  const long = uiReviewStatus(tool, { review: { approval: { name: "A".repeat(100) } } }).description;
+  const tool = { state: "pending", description: "B".repeat(200), target_url: "https://v" };
+  const long = uiReviewStatus(tool, { review: { approval: null }, owners: { pending: [["@acme/jarvis"]], approved: [] } }).description;
   assert.equal(long.length, 140);
-  assert.ok(long.endsWith("…"));
+  assert.ok(long.endsWith("… - Review required - Jarvis approval needed"));
+
+  const owners = { pending: Array.from({ length: 20 }, (_, i) => [`@acme/team-${i}`]), approved: [] };
+  const crowded = uiReviewStatus(tool, { review: null, owners }).description;
+  assert.equal(crowded.length, 140);
+  assert.ok(crowded.endsWith("… approval needed"));
 });
