@@ -93,6 +93,14 @@ test("uiReviewStatus combines a required review with outstanding code owners", (
   assert.deepEqual(status({ review: reece }), { state: "success", description: "✓ 3 modified", target_url: tool.target_url });
   assert.equal(status({ review: reece, owners: { pending: jarvis, approved: [] } }).description, "✓ 3 modified - Jarvis approval needed");
   assert.equal(status({ review: { approval: null }, owners: { pending: [["@acme/jarvis"], ["@reececomo"]], approved: [] } }).description, "3 modified - Review required - Jarvis, reececomo approval needed");
+  assert.equal(
+    status({ review: { approval: null }, owners: { pending: [["@acme/marketplace"], ["@acme/marketplace", "@acme/pingu"], ["@acme/Pingu"]], approved: [] } }).description,
+    "3 modified - Review required - Marketplace, Pingu approval needed",
+  );
+  assert.equal(
+    status({ review: reece, owners: { pending: [["@acme/marketplace", "@acme/pingu"]], approved: [["@acme/pingu"], ["@acme/pingu", "@acme/jarvis"]] } }).description,
+    "✓ 3 modified - Marketplace/Pingu approval needed - Pingu approved",
+  );
   assert.deepEqual(status({ review: reece, owners: { pending: [], approved: [["@acme/marketplace", "@acme/patient-accounts"]] } }), {
     state: "success",
     description: "✓ 3 modified - Marketplace/Patient Accounts approved",
