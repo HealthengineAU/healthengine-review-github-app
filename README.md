@@ -41,6 +41,9 @@
     unable to review), on `issue_comment.created` and `.edited`
   - Summoned as the last person who asked Auggie for the review, or the PR
     author when this app did the asking
+  - Also triggered when Auggie never acknowledges a summon, which is how a
+    dead or out-of-credits Auggie usually fails: the unacknowledged summon
+    hands the review over as the person who asked, or the PR author
   - Only once per failure, and only where Dusty is enabled and reachable
 - Automatically invites a random AI reviewer (opt-in via `ai_review.automatic`):
   - When a pull request is opened, marked ready for review, or reopened

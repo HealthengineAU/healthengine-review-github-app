@@ -522,3 +522,60 @@ test("review_requested: an 'ai-review' team clears the request and triggers a re
   assert.equal(countCalls(octokit, "pulls.removeRequestedReviewers"), 1);
   assert.equal(countCalls(octokit, "rest.pulls.requestReviewers"), 1);
 });
+
+test("issue_comment: an unacknowledged Auggie summon hands the review to Dusty", async (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  const { app, dispatch } = makeApp();
+  register(app);
+  const octokit = makeOctokit({
+    "rest.issues.createComment": { data: { id: 99 } },
+    "paginate:rest.reactions.listForIssueComment": [],
+  });
+  const context = makeContext({
+    octokit,
+    config: dustyConfig(["augment", "dusty"]),
+    payload: {
+      issue: { number: 7, pull_request: {} },
+      comment: { id: 5, body: "roast me auggie", user: { type: "User", login: "someone" } },
+    },
+  });
+  await dispatch("issue_comment.created", context);
+
+  t.mock.timers.tick(21_000);
+  for (let i = 0; i < 20; i++) await Promise.resolve();
+
+  t.mock.timers.tick(1_000);
+  for (let i = 0; i < 20; i++) await Promise.resolve();
+
+  const bodies = calls(octokit, "rest.issues.createComment").map((c) => c.args.body);
+  assert.ok(bodies.includes("@acme/dusty review"));
+  const wake = calls(octokit, "rest.actions.createWorkflowDispatch")[0];
+  assert.equal(wake?.args?.inputs?.actor, "someone");
+});
+
+test("issue_comment: an acknowledged Auggie summon leaves Dusty alone", async (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  const { app, dispatch } = makeApp();
+  register(app);
+  const octokit = makeOctokit({
+    "rest.issues.createComment": { data: { id: 99 } },
+    "paginate:rest.reactions.listForIssueComment": [
+      { user: { login: "augmentcode-dev[bot]" } },
+    ],
+  });
+  const context = makeContext({
+    octokit,
+    config: dustyConfig(["augment", "dusty"]),
+    payload: {
+      issue: { number: 7, pull_request: {} },
+      comment: { id: 5, body: "roast me auggie", user: { type: "User", login: "someone" } },
+    },
+  });
+  await dispatch("issue_comment.created", context);
+
+  t.mock.timers.tick(21_000);
+  for (let i = 0; i < 20; i++) await Promise.resolve();
+
+  const bodies = calls(octokit, "rest.issues.createComment").map((c) => c.args.body);
+  assert.ok(!bodies.includes("@acme/dusty review"));
+});
