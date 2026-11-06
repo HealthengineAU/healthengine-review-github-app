@@ -1,5 +1,6 @@
 import { register as registerAgentProxies } from "./lib/agent-proxies.js";
 import { register as registerAIReviewCommitStatus } from "./lib/ai-review-commit-status.js";
+import { register as registerAugmentFallback } from "./lib/augment-fallback.js";
 import { register as registerAutoTriggerAiReview } from "./lib/auto-trigger-ai-review.js";
 import { register as registerCleanAiReviewComments } from "./lib/clean-ai-review-comments.js";
 import { register as registerDustySlackProxy } from "./lib/dusty-slack-proxy.js";
@@ -13,6 +14,7 @@ import { register as registerUiReviewApprovals } from "./lib/ui-review-approvals
 export default (app, options = {}) => {
   registerAgentProxies(app);
   registerAIReviewCommitStatus(app);
+  registerAugmentFallback(app);
   registerAutoTriggerAiReview(app);
   registerCleanAiReviewComments(app);
   registerDustySlackProxy(app, options);

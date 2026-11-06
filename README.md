@@ -36,6 +36,12 @@
     the person who asked — nothing outside this app watches for that comment,
     and Dusty only takes a mention from an org member. Dusty is only summonable
     where an `agents` entry can reach it, whatever `providers` says
+- Hands a review to Dusty when Auggie can't run it:
+  - Triggered by Auggie's own reply saying it is out of credits (or otherwise
+    unable to review), on `issue_comment.created` and `.edited`
+  - Summoned as the last person who asked Auggie for the review, or the PR
+    author when this app did the asking
+  - Only once per failure, and only where Dusty is enabled and reachable
 - Automatically invites a random AI reviewer (opt-in via `ai_review.automatic`):
   - When a pull request is opened, marked ready for review, or reopened
   - Only when the PR has no completed AI review and no pending AI review
