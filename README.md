@@ -73,6 +73,10 @@
     once the wake is queued. A comment on an issue in the agent's own repo —
     which it watches itself — goes straight to 👍. It means "received", not "done"
 
+- Dismisses pull request approvals from bots (`dismiss_bot_approvals.authors`,
+  default `"*[bot]"`), so only humans can approve. Only `Bot` accounts are ever
+  dismissed
+
 - Approves UI changes by checkbox (`UI Review` / `UI Review (<suite>)` statuses from
   found-pixel, when it posts `pending` with `fp=` in the URL):
   - Rewrites the status to `… - Review required`, still linking to found-pixel's viewer, and adds
@@ -230,6 +234,11 @@ ai_review:
       - "**pnpm-lock.yaml"
       - "**go.sum"
       - "**.snap"
+
+# Bot approvals to dismiss. Filter patterns as above, matched against Bot
+# accounts only; [] dismisses none. Requires Pull requests: Read and write.
+dismiss_bot_approvals:
+  authors: ["*[bot]"]    # e.g. ["*[bot]", "!renovate[bot]"]
 
 # Issue links (optional; omit the key entirely to disable).
 #

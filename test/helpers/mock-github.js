@@ -82,6 +82,7 @@ export function makeOctokit(responses = {}) {
         getByUsername: record("rest.users.getByUsername"),
       },
       pulls: {
+        dismissReview: record("rest.pulls.dismissReview"),
         get: record("rest.pulls.get"),
         getReviewComment: record("rest.pulls.getReviewComment"),
         listReviews: tag("rest.pulls.listReviews"),
