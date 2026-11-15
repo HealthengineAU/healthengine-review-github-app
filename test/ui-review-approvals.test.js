@@ -126,3 +126,14 @@ test("uiReviewStatus stays within 140 chars", () => {
   assert.equal(crowded.length, 140);
   assert.ok(crowded.endsWith("… approval needed"));
 });
+
+test("withOwnersStatus lists pending then approved owners, and strikes through once all approve", async () => {
+  const { withOwnersStatus } = await import("../lib/ui-review-approvals.js");
+  const body = "<!-- marker -->\n## UI Review\n\nDetected 1 change";
+  const pending = withOwnersStatus(body, { pending: [["@org/pingu"]], approved: [["@org/marketplace"]] });
+  assert.match(pending, /🟡 \*\*Story owner PR approvals:\*\* 🟡 Pingu, ✅ ~Marketplace~\n\n<\/td><\/tr><\/table>\n\n## UI Review/);
+  const done = withOwnersStatus(pending, { pending: [], approved: [["@org/pingu"], ["@org/marketplace"]] });
+  assert.match(done, /✅ \*\*~Story owner PR approvals:~\*\* ✅ ~Marketplace~, ✅ ~Pingu~/);
+  assert.equal(done.match(/ui-owners-status/g).length, 1);
+  assert.equal(withOwnersStatus(body, null), body);
+});
