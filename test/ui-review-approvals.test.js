@@ -17,8 +17,8 @@ const {
 const LINES = {
   prompt: "> - [ ] **Changes acknowledged** - ✅ Check this box to confirm these look correct",
   ticked: "> - [x] **Changes acknowledged** - ✅ Check this box to confirm these look correct",
-  approved: "> - [x] ~Changes acknowledged~ - Reviewed by @reececomo",
-  unticked: "> - [ ] ~Changes acknowledged~ - Reviewed by @reececomo",
+  approved: "> - [x] ~Changes acknowledged~ - Acknowledged by @reececomo",
+  unticked: "> - [ ] ~Changes acknowledged~ - Acknowledged by @reececomo",
 };
 const raw = (fp) => `<!-- found-pixel-comment -->\n<!-- ui-review fp=${fp} -->\n## 📘 UI Review`;
 const body = (fp, line = "prompt") =>
@@ -43,7 +43,7 @@ test("reviewState reads the fingerprint, checkbox and its label in any form", ()
   const state = (line) => reviewState(body("cb4f8904", line));
   assert.deepEqual(state("prompt"), { fp: "cb4f8904", ticked: false, label: "**Changes acknowledged** - ✅ Check this box to confirm these look correct" });
   assert.deepEqual(state("ticked"), { ...state("prompt"), ticked: true });
-  assert.deepEqual(state("approved"), { fp: "cb4f8904", ticked: true, label: "~Changes acknowledged~ - Reviewed by @reececomo" });
+  assert.deepEqual(state("approved"), { fp: "cb4f8904", ticked: true, label: "~Changes acknowledged~ - Acknowledged by @reececomo" });
   assert.deepEqual(state("unticked"), { ...state("approved"), ticked: false });
   assert.equal(reviewState(body("cb4f8904").replace("[ ]", "[X]")).ticked, true);
   assert.equal(reviewState(raw("cb4f8904")), null);
@@ -62,7 +62,7 @@ test("approve rewrites or adds the approved line and stamps; unapprove reverts",
   const approved = approve(body("cb4f8904", "ticked"), stamp);
   assert.equal(approved, `${body("cb4f8904", "approved")}\n<!-- ui-approved fp=cb4f8904 by=reececomo name="Reece RC Como $&" -->`);
   const carried = approve(`${raw("cb4f8904")}\n${STAMP("cb4f8904")}`, stamp);
-  assert.equal(reviewState(carried).label, "~Changes acknowledged~ - Reviewed by @reececomo");
+  assert.equal(reviewState(carried).label, "~Changes acknowledged~ - Acknowledged by @reececomo");
   assert.equal(carried.match(/ui-approved/g).length, 1);
 
   const restamped = approve(approved, { fp: "1a2b3c4d", by: "reececomo", name: "Reece" });
@@ -88,24 +88,24 @@ test("parseStamp tolerates a missing name", () => {
 test("uiReviewStatus combines a required review with outstanding code owners", () => {
   const tool = { state: "pending", description: "3 modified", target_url: "https://v/?fp=cb4f8904" };
   const status = (opts) => uiReviewStatus(tool, opts);
-  const reece = { approval: { name: "Reece Como" } };
+  const reece = { approval: { by: "reececomo", name: "Reece Como" } };
   const jarvis = [["@acme/jarvis"]];
 
-  assert.deepEqual(status({ review: { approval: null } }), { state: "pending", description: "3 modified - Review required", target_url: tool.target_url });
-  assert.deepEqual(status({ review: reece }), { state: "success", description: "✓ 3 modified", target_url: tool.target_url });
-  assert.equal(status({ review: reece, owners: { pending: jarvis, approved: [] } }).description, "✓ 3 modified - Jarvis approval needed");
-  assert.equal(status({ review: { approval: null }, owners: { pending: [["@acme/jarvis"], ["@reececomo"]], approved: [] } }).description, "3 modified - Review required - Jarvis, reececomo approval needed");
+  assert.deepEqual(status({ review: { approval: null } }), { state: "pending", description: "3 modified - Acknowledgement required", target_url: tool.target_url });
+  assert.deepEqual(status({ review: reece }), { state: "success", description: "✓ 3 modified - Acknowledged by @reececomo", target_url: tool.target_url });
+  assert.equal(status({ review: reece, owners: { pending: jarvis, approved: [] } }).description, "✓ 3 modified - Acknowledged by @reececomo - Jarvis approval needed");
+  assert.equal(status({ review: { approval: null }, owners: { pending: [["@acme/jarvis"], ["@reececomo"]], approved: [] } }).description, "3 modified - Acknowledgement required - Jarvis, reececomo approval needed");
   assert.equal(
     status({ review: { approval: null }, owners: { pending: [["@acme/marketplace"], ["@acme/marketplace", "@acme/pingu"], ["@acme/Pingu"]], approved: [] } }).description,
-    "3 modified - Review required - Marketplace, Pingu approval needed",
+    "3 modified - Acknowledgement required - Marketplace, Pingu approval needed",
   );
   assert.equal(
     status({ review: reece, owners: { pending: [["@acme/marketplace", "@acme/pingu"]], approved: [["@acme/pingu"], ["@acme/pingu", "@acme/jarvis"]] } }).description,
-    "✓ 3 modified - Marketplace/Pingu approval needed - Pingu approved",
+    "✓ 3 modified - Acknowledged by @reececomo - Marketplace/Pingu approval needed - Pingu approved",
   );
   assert.deepEqual(status({ review: reece, owners: { pending: [], approved: [["@acme/marketplace", "@acme/patient-accounts"]] } }), {
     state: "success",
-    description: "✓ 3 modified - Marketplace/Patient Accounts approved",
+    description: "✓ 3 modified - Acknowledged by @reececomo - Marketplace/Patient Accounts approved",
     target_url: tool.target_url,
   });
 
@@ -121,7 +121,7 @@ test("uiReviewStatus stays within 140 chars", () => {
   const tool = { state: "pending", description: "B".repeat(200), target_url: "https://v" };
   const long = uiReviewStatus(tool, { review: { approval: null }, owners: { pending: [["@acme/jarvis"]], approved: [] } }).description;
   assert.equal(long.length, 140);
-  assert.ok(long.endsWith("… - Review required - Jarvis approval needed"));
+  assert.ok(long.endsWith("… - Acknowledgement required - Jarvis approval needed"));
 
   const owners = { pending: Array.from({ length: 20 }, (_, i) => [`@acme/team-${i}`]), approved: [] };
   const crowded = uiReviewStatus(tool, { review: null, owners }).description;
