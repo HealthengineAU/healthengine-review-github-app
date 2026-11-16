@@ -63,11 +63,11 @@ test("drafts are held but only invited once ready for review", async () => {
 test("a required review and outstanding code owners show together", async () => {
   const stamp = '<!-- ui-approved fp=cb4f8904 by=reececomo name="Reece Como" -->';
   const t = setup({
-    comments: [comment(["@acme/jarvis"], { fp: "cb4f8904", extra: ["> [!Warning]", "> - [x] ~Changes Reviewed~ - Reviewed by @reececomo", stamp] })],
+    comments: [comment(["@acme/jarvis"], { fp: "cb4f8904", extra: ["> [!Warning]", "> - [x] ~Changes acknowledged~ - Acknowledged by @reececomo", stamp] })],
     statuses: [toolStatus({ state: "pending", fp: "cb4f8904" })],
   });
   await t.onStatus();
-  assert.deepEqual(t.posted(), [["pending", "✓ 3 modified - Jarvis approval needed", VIEWER("cb4f8904")]]);
+  assert.deepEqual(t.posted(), [["pending", "✓ 3 modified - Acknowledged by @reececomo - Jarvis approval needed", VIEWER("cb4f8904")]]);
 });
 
 test("a PR approval from any member, at any point, clears the owner", async () => {
