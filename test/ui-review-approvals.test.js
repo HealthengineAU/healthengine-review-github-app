@@ -15,14 +15,14 @@ const {
 } = await import("../lib/ui-review-approvals.js");
 
 const LINES = {
-  prompt: "> - [ ] **Changes Reviewed** - ✅ Check this box to confirm these changes",
-  ticked: "> - [x] **Changes Reviewed** - ✅ Check this box to confirm these changes",
-  approved: "> - [x] ~Changes Reviewed~ - Reviewed by @reececomo",
-  unticked: "> - [ ] ~Changes Reviewed~ - Reviewed by @reececomo",
+  prompt: "> - [ ] **Changes acknowledged** - ✅ Check this box to confirm these look correct",
+  ticked: "> - [x] **Changes acknowledged** - ✅ Check this box to confirm these look correct",
+  approved: "> - [x] ~Changes acknowledged~ - Reviewed by @reececomo",
+  unticked: "> - [ ] ~Changes acknowledged~ - Reviewed by @reececomo",
 };
 const raw = (fp) => `<!-- found-pixel-comment -->\n<!-- ui-review fp=${fp} -->\n## 📘 UI Review`;
 const body = (fp, line = "prompt") =>
-  `<!-- found-pixel-comment -->\n<!-- ui-review fp=${fp} -->\n> [!Warning]\n${LINES[line]}\n\n## 📘 UI Review`;
+  `${raw(fp)}\n\n<h2></h2>\n\n> [!Warning]\n${LINES[line]}\n`;
 const STAMP = (fp) => `<!-- ui-approved fp=${fp} by=reececomo name="Reece Como" -->`;
 
 test("isUiReviewStatus matches the bare and suited contexts only", () => {
@@ -41,9 +41,9 @@ test("fingerprintOf reads the fp param", () => {
 
 test("reviewState reads the fingerprint, checkbox and its label in any form", () => {
   const state = (line) => reviewState(body("cb4f8904", line));
-  assert.deepEqual(state("prompt"), { fp: "cb4f8904", ticked: false, label: "**Changes Reviewed** - ✅ Check this box to confirm these changes" });
+  assert.deepEqual(state("prompt"), { fp: "cb4f8904", ticked: false, label: "**Changes acknowledged** - ✅ Check this box to confirm these look correct" });
   assert.deepEqual(state("ticked"), { ...state("prompt"), ticked: true });
-  assert.deepEqual(state("approved"), { fp: "cb4f8904", ticked: true, label: "~Changes Reviewed~ - Reviewed by @reececomo" });
+  assert.deepEqual(state("approved"), { fp: "cb4f8904", ticked: true, label: "~Changes acknowledged~ - Reviewed by @reececomo" });
   assert.deepEqual(state("unticked"), { ...state("approved"), ticked: false });
   assert.equal(reviewState(body("cb4f8904").replace("[ ]", "[X]")).ticked, true);
   assert.equal(reviewState(raw("cb4f8904")), null);
@@ -61,7 +61,9 @@ test("approve rewrites or adds the approved line and stamps; unapprove reverts",
   const stamp = { fp: "cb4f8904", by: "reececomo", name: 'Reece "RC" <Como> $&' };
   const approved = approve(body("cb4f8904", "ticked"), stamp);
   assert.equal(approved, `${body("cb4f8904", "approved")}\n<!-- ui-approved fp=cb4f8904 by=reececomo name="Reece RC Como $&" -->`);
-  assert.equal(approve(`${raw("cb4f8904")}\n${STAMP("cb4f8904")}`, stamp), approved);
+  const carried = approve(`${raw("cb4f8904")}\n${STAMP("cb4f8904")}`, stamp);
+  assert.equal(reviewState(carried).label, "~Changes acknowledged~ - Reviewed by @reececomo");
+  assert.equal(carried.match(/ui-approved/g).length, 1);
 
   const restamped = approve(approved, { fp: "1a2b3c4d", by: "reececomo", name: "Reece" });
   assert.equal(restamped.match(/ui-approved/g).length, 1);
@@ -127,13 +129,23 @@ test("uiReviewStatus stays within 140 chars", () => {
   assert.ok(crowded.endsWith("… approval needed"));
 });
 
-test("withOwnersStatus lists pending then approved owners, and strikes through once all approve", async () => {
+test("withOwnersStatus tabulates owners with filtered shortcuts under the checkbox", async () => {
   const { withOwnersStatus } = await import("../lib/ui-review-approvals.js");
-  const body = "<!-- marker -->\n## UI Review\n\nDetected 1 change";
-  const pending = withOwnersStatus(body, { pending: [["@org/pingu"]], approved: [["@org/marketplace"]] });
-  assert.match(pending, /🟡 \*\*Story owner PR approvals:\*\* 🟡 Pingu, ✅ ~Marketplace~\n\n<\/td><\/tr><\/table>\n\n## UI Review/);
-  const done = withOwnersStatus(pending, { pending: [], approved: [["@org/pingu"], ["@org/marketplace"]] });
-  assert.match(done, /✅ \*\*~Story owner PR approvals:~\*\* ✅ ~Marketplace~, ✅ ~Pingu~/);
-  assert.equal(done.match(/ui-owners-status/g).length, 1);
-  assert.equal(withOwnersStatus(body, null), body);
+  const review = "https://visreg.he0.io/?r=unicron&b=NOOT-1";
+  const story = "https://code.he0.io/unicron/storybook/NOOT-1/";
+  const base = `${body("cb4f8904", "approved")}`.replace("## 📘 UI Review", `## 📘 UI Review\n\nDetected 2 changes [↗ Review](${review})\n\n[Story](${story}?path=/story/a--b)`);
+  const owners = { rows: [{ entry: ["@org/pingu"], by: null }, { entry: ["@org/marketplace"], by: "nstreet" }] };
+  const out = withOwnersStatus(base, owners);
+  assert.ok(out.startsWith(base.trimEnd()));
+  assert.ok(out.endsWith([
+    "<!-- ui-owners-status -->",
+    "| | Affected owners | Shortcuts |",
+    "|:-:|---|---|",
+    `| 🟡 | **Pingu** · _PR approval needed_ | [↗ Review](${review}&owner=%40org%2Fpingu) · [Storybook](${story}?tags=%40org%2Fpingu&statuses=modified;new) |`,
+    `| ✅ | ~Marketplace~ · _PR approved by @nstreet_ | [↗ Review](${review}&owner=%40org%2Fmarketplace) · [Storybook](${story}?tags=%40org%2Fmarketplace&statuses=modified;new) |`,
+    "",
+  ].join("\n")));
+  assert.equal(withOwnersStatus(out, owners), out);
+  assert.equal(withOwnersStatus(out, null), base.trimEnd());
+  assert.equal(withOwnersStatus(raw("cb4f8904"), owners).match(/<h2><\/h2>/g).length, 1);
 });

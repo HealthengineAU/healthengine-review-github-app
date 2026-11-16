@@ -9,10 +9,10 @@ const URL = (fp) => `https://visreg.he0.io/?r=catalyst&b=feature-x${fp ? `&fp=${
 const STAMP = (fp, name = "Reece Como") => `<!-- ui-approved fp=${fp} by=reececomo name="${name}" -->`;
 
 const LINES = {
-  prompt: "> - [ ] **Changes Reviewed** - ✅ Check this box to confirm these changes",
-  ticked: "> - [x] **Changes Reviewed** - ✅ Check this box to confirm these changes",
-  approved: (login = "reececomo") => `> - [x] ~Changes Reviewed~ - Reviewed by @${login}`,
-  unticked: "> - [ ] ~Changes Reviewed~ - Reviewed by @reececomo",
+  prompt: "> - [ ] **Changes acknowledged** - ✅ Check this box to confirm these look correct",
+  ticked: "> - [x] **Changes acknowledged** - ✅ Check this box to confirm these look correct",
+  approved: (login = "reececomo") => `> - [x] ~Changes acknowledged~ - Reviewed by @${login}`,
+  unticked: "> - [ ] ~Changes acknowledged~ - Reviewed by @reececomo",
 };
 
 const COMMENT_URL = (id) => `https://github.com/acme/catalyst/pull/57#issuecomment-${id}`;
@@ -23,9 +23,9 @@ const toolComment = (id, fp, { line = LINES.prompt, stampFp, suite } = {}) => ({
   body: [
     suite ? `<!-- visreg-comment:${suite} -->` : "<!-- found-pixel-comment -->",
     `<!-- ui-review fp=${fp} -->`,
-    ...(line ? ["> [!Warning]", line, ""] : []),
     "## 📘 UI Review",
     ...(stampFp ? [STAMP(stampFp)] : []),
+    ...(line ? ["", "<h2></h2>", "", "> [!Warning]", line, ""] : []),
   ].join("\n"),
 });
 const rawComment = (id, fp, opts = {}) => toolComment(id, fp, { line: null, ...opts });
@@ -178,7 +178,7 @@ test("issue_comment.edited: ticking approves the comment and flips the pending s
   });
   await onEdit(t, toolComment(1, "cb4f8904"), ticked);
 
-  assert.deepEqual(t.calls("rest.issues.updateComment").map((a) => [a.comment_id, a.body]), [[1, approvedComment(1, "cb4f8904").body]]);
+  assert.deepEqual(t.calls("rest.issues.updateComment").map((a) => [a.comment_id, a.body]), [[1, `${toolComment(1, "cb4f8904", { line: LINES.approved() }).body}\n${STAMP("cb4f8904")}`]]);
   assert.deepEqual(t.posted(), [["UI Review", "success", "✓ 3 modified", URL("cb4f8904")]]);
 });
 

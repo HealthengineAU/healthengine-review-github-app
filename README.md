@@ -80,13 +80,15 @@
 - Approves UI changes by checkbox (`UI Review` / `UI Review (<suite>)` statuses from
   found-pixel, when it posts `pending` with `fp=` in the URL):
   - Rewrites the status to `… - Review required`, still linking to found-pixel's viewer, and adds
-    a **Changes Reviewed** checkbox to the top of found-pixel's PR comment (the one with the same
-    fingerprint) if found-pixel hasn't
-  - Ticking it rewrites the line to `~Changes Reviewed~ - Reviewed by @<login>`, stamps the
+    a **Changes acknowledged** checkbox under a divider at the bottom of found-pixel's PR comment
+    (the one with the same fingerprint) if found-pixel hasn't
+  - Ticking it rewrites the line to `~Changes acknowledged~ - Reviewed by @<login>`, stamps the
     comment with the fingerprint, and flips the pending statuses with that fingerprint to
     `✓ …`. Anyone able to edit the comment can approve
   - found-pixel keeps the stamp when it rewrites the comment, so later builds with the same
     fingerprint are approved again; a different fingerprint drops the stamp and asks again
+  - Lists each affected story owner below the checkbox (🟡 PR approval needed / ✅ PR approved by
+    @login), with UI Review and Storybook links filtered to that owner
   - Unticking puts the original checkbox back, removes the stamp and puts the approved
     statuses back to `… - Review required`
   - The app recognises its own statuses by their description's `✓ ` prefix or suffix and acts only
