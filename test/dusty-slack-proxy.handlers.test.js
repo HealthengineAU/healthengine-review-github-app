@@ -98,7 +98,18 @@ test("an alert in a channel listed by the org config dispatches event=alert", as
   const dispatched = [];
   const octokit = {
     config: {
-      get: async () => ({ config: { slack: { alerts: { channels: ["C_ALERT"] } } } }),
+      get: async () => ({
+        config: {
+          agents: [{
+            name: "dusty",
+            bot: "dusty-the-robot[bot]",
+            events: ["mention", "alert"],
+            mention: "@dusty",
+            alerts: { channels: ["C_ALERT"] },
+            dispatch: { owner: "HealthengineAU", repo: "dusty" },
+          }],
+        },
+      }),
     },
     rest: {
       apps: { getOrgInstallation: async () => ({ data: { id: 7 } }) },

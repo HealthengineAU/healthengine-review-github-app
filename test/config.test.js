@@ -11,7 +11,7 @@ import {
   normalizeProviders,
   normalizeSkipAuthors,
   normalizeStaleDetection,
-  loadAiReviewConfig, normalizeSlack, normalizeSlackAlerts } from "../lib/config.js";
+  loadAiReviewConfig, normalizeAgents, normalizeAgentAlerts } from "../lib/config.js";
 import { matchesFilterPatterns } from "../lib/filter-patterns.js";
 
 // Several tests here intentionally exercise the "unknown provider" and
@@ -604,20 +604,33 @@ test("normalizeIssueLinks: repositories filter the rollout", () => {
   assert.equal(matchesFilterPatterns(links.repositories, "legacy-monolith"), false);
 });
 
-test("normalizeSlackAlerts: dormant without channels, and tolerant of junk", () => {
-  const empty = normalizeSlackAlerts(undefined);
+test("normalizeAgentAlerts: dormant without channels, and tolerant of junk", () => {
+  const empty = normalizeAgentAlerts(undefined);
   assert.equal(empty.channels.size, 0);
   assert.equal(empty.bots.size, 0);
   assert.equal(empty.maxPerHour, 6);
-  assert.equal(normalizeSlackAlerts({ channels: "C1", max_per_hour: "lots" }).channels.size, 0);
-  assert.equal(normalizeSlackAlerts({ max_per_hour: -1 }).maxPerHour, 6);
+  assert.equal(normalizeAgentAlerts({ channels: "C1", max_per_hour: "lots" }).channels.size, 0);
+  assert.equal(normalizeAgentAlerts({ max_per_hour: -1 }).maxPerHour, 6);
 });
 
-test("normalizeSlack: reads channels, bots and the hourly cap", () => {
-  const { alerts } = normalizeSlack({
-    alerts: { channels: [" C_DEV_CORE ", "", 7], bots: ["A02"], max_per_hour: 2 },
-  });
+test("normalizeAgentAlerts: reads channels, bots and the hourly cap", () => {
+  const alerts = normalizeAgentAlerts({ channels: [" C_DEV_CORE ", "", 7], bots: ["A02"], max_per_hour: 2 });
   assert.deepEqual([...alerts.channels], ["C_DEV_CORE"]);
   assert.deepEqual([...alerts.bots], ["A02"]);
   assert.equal(alerts.maxPerHour, 2);
+});
+
+test("normalizeAgents: an agent's alerts ride on its own entry, and need channels", () => {
+  const base = { name: "dusty", bot: "dusty[bot]", mention: "@dusty", dispatch: { owner: "O", repo: "R" } };
+  const [dormant] = normalizeAgents([base]);
+  assert.equal(dormant.events.has("alert"), false);
+  assert.equal(dormant.alerts.channels.size, 0);
+
+  const [watching] = normalizeAgents([
+    { ...base, events: ["mention", "alert"], alerts: { channels: ["C_ALERT"], bots: ["A02"], max_per_hour: 3 } },
+  ]);
+  assert.equal(watching.events.has("alert"), true);
+  assert.deepEqual([...watching.alerts.channels], ["C_ALERT"]);
+  assert.deepEqual([...watching.alerts.bots], ["A02"]);
+  assert.equal(watching.alerts.maxPerHour, 3);
 });

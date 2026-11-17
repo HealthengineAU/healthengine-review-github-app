@@ -104,7 +104,7 @@
   - Re-checks on every found-pixel status, when the PR is marked ready for review, and when a
     review is submitted or dismissed
 - Wakes Dusty from monitoring alerts in the on-call channels (see below):
-  - Only top-level messages, only in a channel listed under `slack.alerts.channels`
+  - Only top-level messages, only in a channel listed under the agent's `alerts.channels`
     in the org's config file, only from a trusted alert app — humans talking in the
     channel, thread replies and edits are ignored
   - Capped at 6 alerts per channel per hour, so a flapping monitor cannot open a
@@ -171,16 +171,20 @@ thread — and an engineer replying `@Dusty …` there wakes the same session.
 1. Add `channels:history` to the Dusty app's bot scopes and subscribe it to the
    `message.channels` bot event, then reinstall
 2. Invite Dusty to each channel you want watched
-3. List those channel ids under `slack.alerts` in
+3. List those channel ids under the agent's `alerts` block in
    `.github/healthengine-review.yml` **in the org's `.github` repo** — a Slack event
-   carries no repository context, so the Slack settings are read from there:
+   carries no repository context, so the agent list is read from there, and the agent
+   is matched by its `dispatch` target:
 
    ```yaml
-   slack:
-     alerts:
-       channels: ["C0123DEVCORE"]   # empty (the default) means on-call is off
-       bots: ["A02KIBANA"]          # alert apps; empty falls back to SLACK_ALLOWED_BOT_APPS
-       max_per_hour: 6              # per channel
+   agents:
+     - name: dusty
+       # …bot, mention and dispatch as below…
+       events: [review, comment, check, mention, alert]
+       alerts:
+         channels: ["C0123DEVCORE"]   # empty (the default) means on-call is off
+         bots: ["A02KIBANA"]          # alert apps; empty falls back to SLACK_ALLOWED_BOT_APPS
+         max_per_hour: 6              # per channel
    ```
 
 Changes to the list take effect within the config cache's 8 minutes. What Dusty
@@ -310,7 +314,7 @@ issue_links:
 agents:
   - name: my-agent            # label, for logs
     bot: my-agent[bot]        # the agent's own login — matches its PRs, skips its own noise
-    events: [review, comment, check, mention]   # which activity to forward (default: all four)
+    events: [review, comment, check, mention, alert]   # which activity to forward (default: all five)
     mention: '@my-agent\b'    # regex; needed for `mention` events
     checks: '^buildkite/'     # regex over commit-status contexts; needed for `check` events
     ignore_users:             # human-looking service accounts to drop on comments
@@ -321,22 +325,13 @@ agents:
       repo: my-agent
       workflow: webhook_event.yml  # optional, defaults to webhook_event.yml
       ref: main                    # optional, defaults to main
-
-# Slack settings (optional; omit the key entirely to disable).
-#
-# Read from this file in the org's `.github` repo only — a Slack event carries
-# no repository context, so there is nothing else to resolve against.
-#
-# `alerts` is the on-call listener: a top-level message from one of `bots` in
-# one of `channels` wakes the agent in that message's thread. No channels (the
-# default) means nothing is watched.
-slack:
-  alerts:
-    channels:
-      - "C0123DEVCORE"      # channel ids the agent watches; the agent must be in them
-    bots:
-      - "A02KIBANA"         # alert apps' app_id/bot_id; empty falls back to the deployment allow-list
-    max_per_hour: 6         # per channel, so a flapping monitor can't open a session per beep
+    alerts:                   # Slack on-call; read from the org `.github` repo only,
+                              # since a Slack event carries no repository context
+      channels:
+        - "C0123DEVCORE"      # channel ids the agent watches; the agent must be in them
+      bots:
+        - "A02KIBANA"         # alert apps' app_id/bot_id; empty falls back to the deployment allow-list
+      max_per_hour: 6         # per channel, so a flapping monitor can't open a session per beep
 ```
 
 For each configured agent the app forwards:
@@ -347,6 +342,9 @@ For each configured agent the app forwards:
 - **mention** — a human `@`-mentioning the agent on any PR in the org.
 - **check** — a settled (non-pending) commit status matching `checks` on one of
   the agent's PRs. The body carries the outcome, e.g. `failure: buildkite/test`.
+- **alert** — a top-level Slack message from one of `alerts.bots` in one of
+  `alerts.channels` (see On-call alerts below). Slack-only: no channels, no
+  `alert` event.
 
 Each dispatch sends `{ event, repo, pr, actor, body }` as workflow inputs. What
 the agent does with them — and any authorization of `actor` — is the agent's own
