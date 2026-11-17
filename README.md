@@ -104,8 +104,8 @@
   - Re-checks on every found-pixel status, when the PR is marked ready for review, and when a
     review is submitted or dismissed
 - Wakes Dusty from monitoring alerts in the on-call channels (see below):
-  - Only top-level messages, only in a channel listed in `DUSTY_ONCALL_CHANNELS`,
-    only from an app already in `SLACK_ALLOWED_BOT_APPS` — humans talking in the
+  - Only top-level messages, only in a channel listed under `slack.alerts.channels`
+    in the org's config file, only from a trusted alert app — humans talking in the
     channel, thread replies and edits are ignored
   - Capped at 6 alerts per channel per hour, so a flapping monitor cannot open a
     session per beep
@@ -171,13 +171,22 @@ thread — and an engineer replying `@Dusty …` there wakes the same session.
 1. Add `channels:history` to the Dusty app's bot scopes and subscribe it to the
    `message.channels` bot event, then reinstall
 2. Invite Dusty to each channel you want watched
-3. Set `DUSTY_ONCALL_CHANNELS` to those channel ids, comma-separated. Empty (the
-   default) means on-call is off
-4. Add the alerting app's `app_id` to `SLACK_ALLOWED_BOT_APPS`
+3. List those channel ids under `slack.alerts` in
+   `.github/healthengine-review.yml` **in the org's `.github` repo** — a Slack event
+   carries no repository context, so the Slack settings are read from there:
 
-Nothing else is configured here. What Dusty does with an alert lives in the
-`on-call` skill in the `dusty` repo, and `vars.DUSTY_ONCALL_PAUSED` there silences
-on-call without stopping ordinary sessions.
+   ```yaml
+   slack:
+     alerts:
+       channels: ["C0123DEVCORE"]   # empty (the default) means on-call is off
+       bots: ["A02KIBANA"]          # alert apps; empty falls back to SLACK_ALLOWED_BOT_APPS
+       max_per_hour: 6              # per channel
+   ```
+
+Changes to the list take effect within the config cache's 8 minutes. What Dusty
+does with an alert lives in the `on-call` skill in the `dusty` repo, and
+`vars.DUSTY_ONCALL_PAUSED` there silences on-call without stopping ordinary
+sessions.
 
 ## Tests
 
@@ -312,6 +321,22 @@ agents:
       repo: my-agent
       workflow: webhook_event.yml  # optional, defaults to webhook_event.yml
       ref: main                    # optional, defaults to main
+
+# Slack settings (optional; omit the key entirely to disable).
+#
+# Read from this file in the org's `.github` repo only — a Slack event carries
+# no repository context, so there is nothing else to resolve against.
+#
+# `alerts` is the on-call listener: a top-level message from one of `bots` in
+# one of `channels` wakes the agent in that message's thread. No channels (the
+# default) means nothing is watched.
+slack:
+  alerts:
+    channels:
+      - "C0123DEVCORE"      # channel ids the agent watches; the agent must be in them
+    bots:
+      - "A02KIBANA"         # alert apps' app_id/bot_id; empty falls back to the deployment allow-list
+    max_per_hour: 6         # per channel, so a flapping monitor can't open a session per beep
 ```
 
 For each configured agent the app forwards:

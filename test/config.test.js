@@ -11,8 +11,7 @@ import {
   normalizeProviders,
   normalizeSkipAuthors,
   normalizeStaleDetection,
-  loadAiReviewConfig,
-} from "../lib/config.js";
+  loadAiReviewConfig, normalizeSlack, normalizeSlackAlerts } from "../lib/config.js";
 import { matchesFilterPatterns } from "../lib/filter-patterns.js";
 
 // Several tests here intentionally exercise the "unknown provider" and
@@ -603,4 +602,22 @@ test("normalizeIssueLinks: repositories filter the rollout", () => {
   assert.equal(links.rules.length, 1);
   assert.equal(matchesFilterPatterns(links.repositories, "some-repo"), true);
   assert.equal(matchesFilterPatterns(links.repositories, "legacy-monolith"), false);
+});
+
+test("normalizeSlackAlerts: dormant without channels, and tolerant of junk", () => {
+  const empty = normalizeSlackAlerts(undefined);
+  assert.equal(empty.channels.size, 0);
+  assert.equal(empty.bots.size, 0);
+  assert.equal(empty.maxPerHour, 6);
+  assert.equal(normalizeSlackAlerts({ channels: "C1", max_per_hour: "lots" }).channels.size, 0);
+  assert.equal(normalizeSlackAlerts({ max_per_hour: -1 }).maxPerHour, 6);
+});
+
+test("normalizeSlack: reads channels, bots and the hourly cap", () => {
+  const { alerts } = normalizeSlack({
+    alerts: { channels: [" C_DEV_CORE ", "", 7], bots: ["A02"], max_per_hour: 2 },
+  });
+  assert.deepEqual([...alerts.channels], ["C_DEV_CORE"]);
+  assert.deepEqual([...alerts.bots], ["A02"]);
+  assert.equal(alerts.maxPerHour, 2);
 });

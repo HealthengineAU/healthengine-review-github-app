@@ -91,3 +91,33 @@ test("acks a correctly signed event_callback with 200", async () => {
   const res = await post({ routes: h.routes, headers: signedHeaders(raw), body: raw });
   assert.equal(res.statusCode, 200);
 });
+
+test("an alert in a channel listed by the org config dispatches event=alert", async () => {
+  process.env.SLACK_SIGNING_SECRET = SECRET;
+  process.env.SLACK_ALLOWED_BOT_APPS = "A02";
+  const dispatched = [];
+  const octokit = {
+    config: {
+      get: async () => ({ config: { slack: { alerts: { channels: ["C_ALERT"] } } } }),
+    },
+    rest: {
+      apps: { getOrgInstallation: async () => ({ data: { id: 7 } }) },
+      actions: { createWorkflowDispatch: async (args) => { dispatched.push(args); } },
+    },
+  };
+  const h = makeHarness();
+  h.app.auth = async () => octokit;
+  register(h.app, h.options);
+
+  const raw = JSON.stringify({
+    type: "event_callback",
+    event_id: `Ev-${Math.random()}`,
+    team_id: "T1",
+    event: { type: "message", subtype: "bot_message", channel: "C_ALERT", ts: "9.1", app_id: "A02", text: "queue depth 4000" },
+  });
+  await post({ routes: h.routes, headers: signedHeaders(raw), body: raw });
+
+  assert.equal(dispatched.length, 1);
+  assert.equal(dispatched[0].inputs.event, "alert");
+  assert.equal(dispatched[0].inputs.slack_channel, "C_ALERT");
+});
