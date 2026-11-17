@@ -103,6 +103,12 @@
     removing a request sticks
   - Re-checks on every found-pixel status, when the PR is marked ready for review, and when a
     review is submitted or dismissed
+- Wakes Dusty from monitoring alerts in the on-call channels (see below):
+  - Only top-level messages, only in a channel listed in `DUSTY_ONCALL_CHANNELS`,
+    only from an app already in `SLACK_ALLOWED_BOT_APPS` — humans talking in the
+    channel, thread replies and edits are ignored
+  - Capped at 6 alerts per channel per hour, so a flapping monitor cannot open a
+    session per beep
 - Starts incidents from Slack (`/incident`, see below):
   - One short form raises an `INCY` Incident. *Open* posts a triage thread in
     the current channel (or the incidents channel, where the app can't post),
@@ -154,6 +160,24 @@ Notes:
   it, and the `globalId` means a retry updates the link instead of adding another.
 - **No state is stored.** Every button carries the issue key, channel and thread
   it acts on, so a restart loses nothing and a double-press is deduped.
+
+## On-call alerts
+
+Dusty's Slack app can watch alert channels as well as answer `@Dusty`. A matching
+message is forwarded to `webhook_event.yml` as `event=alert`, which opens a session
+keyed on that message's thread, so Dusty investigates and replies in the alert's
+thread — and an engineer replying `@Dusty …` there wakes the same session.
+
+1. Add `channels:history` to the Dusty app's bot scopes and subscribe it to the
+   `message.channels` bot event, then reinstall
+2. Invite Dusty to each channel you want watched
+3. Set `DUSTY_ONCALL_CHANNELS` to those channel ids, comma-separated. Empty (the
+   default) means on-call is off
+4. Add the alerting app's `app_id` to `SLACK_ALLOWED_BOT_APPS`
+
+Nothing else is configured here. What Dusty does with an alert lives in the
+`on-call` skill in the `dusty` repo, and `vars.DUSTY_ONCALL_PAUSED` there silences
+on-call without stopping ordinary sessions.
 
 ## Tests
 
