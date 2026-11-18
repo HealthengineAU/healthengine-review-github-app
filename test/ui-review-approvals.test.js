@@ -148,4 +148,8 @@ test("withOwnersStatus tabulates owners with filtered shortcuts under the checkb
   assert.equal(withOwnersStatus(out, owners), out);
   assert.equal(withOwnersStatus(out, null), base.trimEnd());
   assert.equal(withOwnersStatus(raw("cb4f8904"), owners).match(/<h2><\/h2>/g).length, 1);
+  const edited = `${out.replaceAll("\n", "\r\n")}\n${STAMP("cb4f8904")}\n${out.slice(base.trimEnd().length)}`;
+  const healed = withOwnersStatus(edited, owners);
+  assert.equal(healed.match(/<!-- ui-owners-status -->/g).length, 1);
+  assert.ok(healed.includes(STAMP("cb4f8904")));
 });
