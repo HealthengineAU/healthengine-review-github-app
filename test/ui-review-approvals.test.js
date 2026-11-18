@@ -141,8 +141,8 @@ test("withOwnersStatus tabulates owners with filtered shortcuts under the checkb
     "<!-- ui-owners-status -->",
     "| | Affected owners | Shortcuts |",
     "|:-:|---|---|",
-    `| 🟡 | **Pingu** · _PR approval needed_ | [↗ Review](${review}&owner=%40org%2Fpingu) · [Storybook](${story}?tags=%40org%2Fpingu&statuses=modified;new) |`,
-    `| ✅ | ~Marketplace~ · _PR approved by @nstreet_ | [↗ Review](${review}&owner=%40org%2Fmarketplace) · [Storybook](${story}?tags=%40org%2Fmarketplace&statuses=modified;new) |`,
+    `| 🟡 | **Pingu** · _PR approval needed_ | [↗ Review](${review}&owner=%40org%2Fpingu&view=gallery) · [Storybook](${story}?tags=%40org%2Fpingu&statuses=modified;new) |`,
+    `| ✅ | ~Marketplace~ · _PR approved by @nstreet_ | [↗ Review](${review}&owner=%40org%2Fmarketplace&view=gallery) · [Storybook](${story}?tags=%40org%2Fmarketplace&statuses=modified;new) |`,
     "",
   ].join("\n")));
   assert.equal(withOwnersStatus(out, owners), out);
