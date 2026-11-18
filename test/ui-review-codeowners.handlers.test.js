@@ -67,7 +67,7 @@ test("a required review and outstanding code owners show together", async () => 
     statuses: [toolStatus({ state: "pending", fp: "cb4f8904" })],
   });
   await t.onStatus();
-  assert.deepEqual(t.posted(), [["pending", "🟡 Awaiting PR approvals: Jarvis - 3 modified - ✅ Acknowledged", VIEWER("cb4f8904")]]);
+  assert.deepEqual(t.posted(), [["pending", "🟡 Awaiting PR approvals: Jarvis - 3 modified - ✅ Changes acknowledged", VIEWER("cb4f8904")]]);
 });
 
 test("a PR approval from any member, at any point, clears the owner", async () => {

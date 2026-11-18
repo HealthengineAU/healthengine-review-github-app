@@ -92,8 +92,8 @@ test("uiReviewStatus leads with outstanding code owners and ends with the acknow
   const jarvis = [["@acme/jarvis"]];
 
   assert.deepEqual(status({ review: { approval: null } }), { state: "pending", description: "3 modified - 🟡 Changes awaiting acknowledgement", target_url: tool.target_url });
-  assert.deepEqual(status({ review: reece }), { state: "success", description: "3 modified - ✅ Acknowledged", target_url: tool.target_url });
-  assert.equal(status({ review: reece, owners: { pending: jarvis, approved: [] } }).description, "🟡 Awaiting PR approvals: Jarvis - 3 modified - ✅ Acknowledged");
+  assert.deepEqual(status({ review: reece }), { state: "success", description: "3 modified - ✅ Changes acknowledged", target_url: tool.target_url });
+  assert.equal(status({ review: reece, owners: { pending: jarvis, approved: [] } }).description, "🟡 Awaiting PR approvals: Jarvis - 3 modified - ✅ Changes acknowledged");
   assert.equal(
     status({ review: { approval: null }, owners: { pending: [["@acme/jarvis"], ["@reececomo"]], approved: [] } }).description,
     "🟡 Awaiting PR approvals: Jarvis, reececomo - 3 modified - 🟡 Changes awaiting acknowledgement",
@@ -104,11 +104,11 @@ test("uiReviewStatus leads with outstanding code owners and ends with the acknow
   );
   assert.equal(
     status({ review: reece, owners: { pending: [["@acme/marketplace", "@acme/pingu"]], approved: [["@acme/pingu"], ["@acme/pingu", "@acme/jarvis"]] } }).description,
-    "🟡 Awaiting PR approvals: Marketplace/Pingu - 3 modified - ✅ Acknowledged",
+    "🟡 Awaiting PR approvals: Marketplace/Pingu - 3 modified - ✅ Changes acknowledged",
   );
   assert.deepEqual(status({ review: reece, owners: { pending: [], approved: [["@acme/marketplace", "@acme/patient-accounts"]] } }), {
     state: "success",
-    description: "3 modified - ✅ Acknowledged",
+    description: "3 modified - ✅ Changes acknowledged",
     target_url: tool.target_url,
   });
 
@@ -131,7 +131,7 @@ test("uiReviewStatus stays within 140 chars", () => {
   const crowded = uiReviewStatus(tool, { review: { approval: { by: "x" } }, owners }).description;
   assert.equal(crowded.length, 140);
   assert.ok(crowded.startsWith("🟡 Awaiting PR approvals: Team 0, "));
-  assert.ok(crowded.endsWith("… - ✅ Acknowledged"));
+  assert.ok(crowded.endsWith("… - ✅ Changes acknowledged"));
 });
 
 test("withOwnersStatus tabulates owners with filtered shortcuts under the checkbox", async () => {

@@ -84,7 +84,7 @@
     (the one with the same fingerprint) if found-pixel hasn't
   - Ticking it rewrites the line to `~Changes acknowledged~ - Acknowledged by @<login>`, stamps the
     comment with the fingerprint, and flips the pending statuses with that fingerprint to
-    `… - ✅ Acknowledged`. Anyone able to edit the comment can approve
+    `… - ✅ Changes acknowledged`. Anyone able to edit the comment can approve
   - found-pixel keeps the stamp when it rewrites the comment, so later builds with the same
     fingerprint are approved again; a different fingerprint drops the stamp and asks again
   - Lists each affected story owner below the checkbox (🟡 PR approval needed / ✅ PR approved by
