@@ -186,6 +186,7 @@ test("classifyAlert ignores unwatched channels, humans, replies, edits and unlis
   assert.equal(classifyAlert({ ...base, app_id: "A99", bot_id: "B99" }, { alertChannels, allowedBots }), null);
   assert.equal(classifyAlert({ ...base, text: "" }, { alertChannels, allowedBots }), null);
   assert.equal(classifyAlert(base, { teamId: "T2", allowedTeam: "T1", alertChannels, allowedBots }), null);
+  assert.equal(classifyAlert(base, { allowedTeam: "T1", alertChannels, allowedBots }), null);
   assert.equal(classifyAlert({ ...base, type: "app_mention" }, { alertChannels, allowedBots }), null);
 });
 
