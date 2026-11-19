@@ -2,7 +2,9 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import crypto from "node:crypto";
 
-import { verifySlackSignature, classifyMention, parseAllowedBots, ackReceived } from "../lib/dusty-slack-proxy.js";
+import {
+  verifySlackSignature, classifyMention, classifyAlert, parseAllowedBots, underAlertRate, ackReceived,
+} from "../lib/dusty-slack-proxy.js";
 
 const SECRET = "shhh";
 const sign = (rawBody, ts, secret = SECRET) =>
@@ -152,4 +154,53 @@ test("ackReceived gives up rather than hanging when Slack does not answer", asyn
   // The real slackCall aborts at 5s; this asserts the caller survives whatever it returns.
   const call = async () => { const e = new Error("The operation was aborted"); e.name = "TimeoutError"; throw e; };
   await assert.doesNotReject(ackReceived({ channel: "C1", ts: "1.1", token: "xoxb-x", call }));
+});
+
+test("classifyAlert forwards a top-level alert from a listed bot in a watched channel", () => {
+  const out = classifyAlert(
+    { type: "message", subtype: "bot_message", channel: "C_ALERT", ts: "333.3", app_id: "A02", text: "SMS queue depth 4000" },
+    { teamId: "T1", allowedTeam: "T1", alertChannels: new Set(["C_ALERT"]), allowedBots: parseAllowedBots("A02") },
+  );
+  assert.deepEqual(out, {
+    event: "alert", slack_channel: "C_ALERT", slack_thread: "333.3", slack_ts: "333.3",
+    slack_team: "T1", actor: "A02", body: "SMS queue depth 4000",
+  });
+});
+
+test("classifyAlert reads attachment text when the message body is empty", () => {
+  const out = classifyAlert(
+    { type: "message", subtype: "bot_message", channel: "C_ALERT", ts: "1.1", app_id: "A02", text: "", attachments: [{ fallback: "CPU 99%" }] },
+    { alertChannels: new Set(["C_ALERT"]), allowedBots: parseAllowedBots("A02") },
+  );
+  assert.equal(out.body, "CPU 99%");
+});
+
+test("classifyAlert ignores unwatched channels, humans, replies, edits and unlisted bots", () => {
+  const alertChannels = new Set(["C_ALERT"]);
+  const allowedBots = parseAllowedBots("A02");
+  const base = { type: "message", subtype: "bot_message", channel: "C_ALERT", ts: "1.1", app_id: "A02", text: "boom" };
+  assert.equal(classifyAlert({ ...base, channel: "C_OTHER" }, { alertChannels, allowedBots }), null);
+  assert.equal(classifyAlert({ ...base, subtype: undefined, app_id: undefined, user: "U9" }, { alertChannels, allowedBots }), null);
+  assert.equal(classifyAlert({ ...base, thread_ts: "0.9" }, { alertChannels, allowedBots }), null);
+  assert.equal(classifyAlert({ ...base, subtype: "message_changed" }, { alertChannels, allowedBots }), null);
+  assert.equal(classifyAlert({ ...base, app_id: "A99", bot_id: "B99" }, { alertChannels, allowedBots }), null);
+  assert.equal(classifyAlert({ ...base, text: "" }, { alertChannels, allowedBots }), null);
+  assert.equal(classifyAlert(base, { teamId: "T2", allowedTeam: "T1", alertChannels, allowedBots }), null);
+  assert.equal(classifyAlert(base, { allowedTeam: "T1", alertChannels, allowedBots }), null);
+  assert.equal(classifyAlert({ ...base, type: "app_mention" }, { alertChannels, allowedBots }), null);
+});
+
+test("classifyAlert is off when no channel is listed", () => {
+  assert.equal(
+    classifyAlert({ type: "message", subtype: "bot_message", channel: "C_ALERT", ts: "1.1", app_id: "A02", text: "boom" },
+      { alertChannels: new Set(), allowedBots: parseAllowedBots("A02") }),
+    null,
+  );
+});
+
+test("underAlertRate caps a noisy channel within the window and recovers after it", () => {
+  const now = 1_700_000_000_000;
+  for (let i = 0; i < 6; i++) assert.equal(underAlertRate("C_NOISY", { now: now + i }), true);
+  assert.equal(underAlertRate("C_NOISY", { now: now + 7 }), false);
+  assert.equal(underAlertRate("C_NOISY", { now: now + 2 * 60 * 60 * 1000 }), true);
 });
