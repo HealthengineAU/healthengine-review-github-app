@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { register } from "../lib/ai-review-commit-status.js";
+import { isRetryable, register } from "../lib/ai-review-commit-status.js";
 import { makeApp, makeOctokit, makeContext } from "./helpers/mock-github.js";
 
 // The status handlers debounce their work behind an 800ms trailing timer, then
@@ -1233,4 +1233,162 @@ test("a running gitStream automation counts as a pending re-review", async (t) =
 
   assert.equal(statusCalls(octokit)[0].args.state, "pending");
   assert.match(statusCalls(octokit)[0].args.description, /^Requested LinearB/);
+});
+
+function reviewedPrContext({ octokit, sha = "abc123" }) {
+  return makeContext({
+    octokit,
+    payload: {
+      pull_request: {
+        number: 7,
+        state: "open",
+        head: { sha },
+        user: { login: "david", type: "User" },
+        labels: [],
+        additions: 50,
+        deletions: 5,
+      },
+    },
+  });
+}
+
+const COPILOT_REVIEW = {
+  id: 1,
+  state: "COMMENTED",
+  commit_id: "abc123",
+  submitted_at: "2026-11-01T00:00:00Z",
+  user: { login: "copilot-pull-request-reviewer[bot]", type: "Bot", id: 99 },
+};
+
+test("an unchanged status isn't rewritten", async (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  const { app, dispatch } = makeApp();
+  register(app);
+  const octokit = makeOctokit({
+    "paginate:rest.pulls.listReviews": [COPILOT_REVIEW],
+    "rest.repos.getCombinedStatusForRef": {
+      data: {
+        statuses: [{
+          context: "AI Review",
+          state: "success",
+          description: "✓ Reviewed by Copilot (no feedback)",
+          target_url: null,
+        }],
+      },
+    },
+  });
+
+  await dispatch("pull_request.synchronize", reviewedPrContext({ octokit }));
+  await flushDebounce(t);
+
+  assert.equal(statusCalls(octokit).length, 0);
+});
+
+test("a rate-limited update is retried", async (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  t.mock.method(console, "warn", () => {});
+  const { app, dispatch } = makeApp();
+  register(app);
+  let failures = 1;
+  const octokit = makeOctokit({
+    "paginate:rest.pulls.listReviews": [COPILOT_REVIEW],
+    "rest.repos.createCommitStatus": () => {
+      if (failures-- > 0) {
+        throw Object.assign(new Error("You have exceeded a secondary rate limit"), { status: 403 });
+      }
+      return { data: {} };
+    },
+  });
+
+  await dispatch("pull_request.synchronize", reviewedPrContext({ octokit }));
+  await flushDebounce(t);
+  assert.equal(statusCalls(octokit).length, 1);
+
+  t.mock.timers.tick(30_000);
+  for (let i = 0; i < 50; i++) await Promise.resolve();
+
+  assert.equal(statusCalls(octokit).length, 2);
+});
+
+test("a permanent failure isn't retried", async (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  const error = t.mock.method(console, "error", () => {});
+  const { app, dispatch } = makeApp();
+  register(app);
+  const octokit = makeOctokit({
+    "paginate:rest.pulls.listReviews": [COPILOT_REVIEW],
+    "rest.repos.createCommitStatus": () => {
+      throw Object.assign(new Error("Resource not accessible by integration"), { status: 403 });
+    },
+  });
+
+  await dispatch("pull_request.synchronize", reviewedPrContext({ octokit }));
+  await flushDebounce(t);
+  t.mock.timers.tick(15 * 60_000);
+  for (let i = 0; i < 50; i++) await Promise.resolve();
+
+  assert.equal(statusCalls(octokit).length, 1);
+  assert.equal(error.mock.callCount(), 1);
+});
+
+test("isRetryable covers rate limits, server errors and network failures", () => {
+  assert.equal(isRetryable({ status: 403, message: "API rate limit exceeded" }), true);
+  assert.equal(isRetryable({ status: 429 }), true);
+  assert.equal(isRetryable({ status: 502 }), true);
+  assert.equal(isRetryable(new Error("socket hang up")), true);
+  assert.equal(isRetryable({ status: 403, message: "Forbidden" }), false);
+  assert.equal(isRetryable({ status: 422 }), false);
+});
+
+function ciStatusContext({ octokit, sha = "abc123", state = "success", context = "buildkite/app" }) {
+  return makeContext({ octokit, payload: { sha, state, context } });
+}
+
+test("a CI result on a commit missing its AI Review status heals it", async (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  const { app, dispatch } = makeApp();
+  register(app);
+  const octokit = makeOctokit({
+    "paginate:rest.pulls.listReviews": [COPILOT_REVIEW],
+    "rest.repos.listPullRequestsAssociatedWithCommit": {
+      data: [
+        { number: 7, state: "open", head: { sha: "abc123" }, user: { login: "david", type: "User" }, labels: [], additions: 50, deletions: 5 },
+        { number: 8, state: "closed", head: { sha: "abc123" } },
+      ],
+    },
+  });
+
+  await dispatch("status", ciStatusContext({ octokit }));
+  await flushDebounce(t);
+
+  const statuses = statusCalls(octokit);
+  assert.equal(statuses.length, 1);
+  assert.match(statuses[0].args.description, /Reviewed by Copilot/);
+});
+
+test("a commit that has its AI Review status is checked once and left alone", async (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  const { app, dispatch } = makeApp();
+  register(app);
+  const octokit = makeOctokit({
+    "rest.repos.getCombinedStatusForRef": { data: { statuses: [{ context: "AI Review", state: "success" }] } },
+  });
+  const context = ciStatusContext({ octokit });
+
+  await dispatch("status", context);
+  await dispatch("status", context);
+  await flushDebounce(t);
+
+  assert.deepEqual(octokit.calls.map((c) => c.method), ["rest.repos.getCombinedStatusForRef"]);
+});
+
+test("pending CI and our own status don't trigger a heal check", async (t) => {
+  const { app, dispatch } = makeApp();
+  register(app);
+  const octokit = makeOctokit();
+
+  await dispatch("status", ciStatusContext({ octokit, state: "pending" }));
+  await dispatch("status", ciStatusContext({ octokit, context: "AI Review" }));
+
+  assert.equal(octokit.calls.length, 0);
 });

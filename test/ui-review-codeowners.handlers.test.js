@@ -7,7 +7,7 @@ import { register } from "../lib/ui-review-approvals.js";
 const SHA = "3897e0b2a142230837e29e68dc4b18a8d318166e";
 const VIEWER = (fp) => `https://visreg.he0.io/?r=catalyst&b=feature-x${fp ? `&fp=${fp}` : ""}`;
 const COMMENT_URL = "https://github.com/acme/catalyst/pull/57#issuecomment-1";
-const TEAMS = { pingu: ["dev", "penny"], jarvis: ["jill"], marketplace: ["mia"], "patient-accounts": ["pat"] };
+const TEAMS = { pingu: ["dev", "penny"], design: ["dana"], jarvis: ["jill"], marketplace: ["mia"], "patient-accounts": ["pat"] };
 
 const ownersTag = (entries) => `<!-- ui-owners${entries.map((e) => ` ${e}`).join("")} -->`;
 const comment = (entries, { fp, extra = [] } = {}) => ({
@@ -144,4 +144,16 @@ test("closed PRs are left alone", async () => {
   const t = setup({ current: pr({ state: "closed" }), comments: [comment(["@acme/jarvis"])] });
   await t.onReview();
   assert.equal(t.octokit.calls.length, 0);
+});
+
+test("team rosters are reused across events", async () => {
+  const lookups = (t) =>
+    t.octokit.calls.filter((c) => c.method === "paginate:rest.teams.listMembersInOrg" && c.args.team_slug === "design").length;
+  const first = setup({ comments: [comment(["@acme/design"])] });
+  await first.onStatus();
+  const second = setup({ comments: [comment(["@acme/design"])] });
+  await second.onStatus();
+
+  assert.equal(lookups(first), 1);
+  assert.equal(lookups(second), 0);
 });
