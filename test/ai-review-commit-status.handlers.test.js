@@ -1,8 +1,47 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { isRetryable, register } from "../lib/ai-review-commit-status.js";
-import { makeApp, makeOctokit, makeContext } from "./helpers/mock-github.js";
+import { isRetryable, register, toRestUser } from "../lib/ai-review-commit-status.js";
+import { makeApp, makeOctokit as baseMakeOctokit, makeContext } from "./helpers/mock-github.js";
+
+// Serves the REST-shaped fixtures below as the single GraphQL activity query.
+const fromRestUser = (user) => user && {
+  __typename: user.type === "Bot" ? "Bot" : "User",
+  login: user.login?.replace(/\[bot\]$/, ""),
+  databaseId: user.id ?? null,
+};
+
+function makeOctokit(responses = {}) {
+  const fixture = (key) => (typeof responses[key] === "function" ? responses[key]() : responses[key]);
+  return baseMakeOctokit({
+    graphql: () => ({
+      repository: {
+        pullRequest: {
+          reviews: {
+            nodes: (fixture("paginate:rest.pulls.listReviews") ?? []).map((r) => ({
+              state: r.state, body: r.body, submittedAt: r.submitted_at, url: r.html_url,
+              commit: r.commit_id ? { oid: r.commit_id } : null, author: fromRestUser(r.user),
+            })),
+          },
+          comments: {
+            nodes: (fixture("paginate:rest.issues.listComments") ?? []).map((c) => ({
+              body: c.body, createdAt: c.created_at, url: c.html_url, author: fromRestUser(c.user),
+            })),
+          },
+          reviewThreads: { nodes: fixture("threads") ?? [] },
+        },
+        object: {
+          status: {
+            contexts: (fixture("rest.repos.getCombinedStatusForRef")?.data?.statuses ?? []).map((st) => ({
+              context: st.context, state: st.state?.toUpperCase(), description: st.description ?? null, targetUrl: st.target_url ?? null,
+            })),
+          },
+        },
+      },
+    }),
+    ...responses,
+  });
+}
 
 // The status handlers debounce their work behind an 800ms trailing timer, then
 // run an async update. This helper advances the mocked clock and lets the
@@ -1391,6 +1430,97 @@ test("pending CI and our own status don't trigger a heal check", async (t) => {
   await dispatch("status", ciStatusContext({ octokit, context: "AI Review" }));
 
   assert.equal(octokit.calls.length, 0);
+});
+
+test("toRestUser restores the [bot] suffix GraphQL drops", () => {
+  assert.deepEqual(toRestUser({ __typename: "Bot", login: "dusty-the-robot", databaseId: 1 }), { login: "dusty-the-robot[bot]", type: "Bot", id: 1 });
+  assert.deepEqual(toRestUser({ __typename: "User", login: "david", databaseId: 2 }), { login: "david", type: "User", id: 2 });
+  assert.equal(toRestUser(null), null);
+});
+
+test("an update reads everything in one GraphQL request", async (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  const { app, dispatch } = makeApp();
+  register(app);
+  const octokit = makeOctokit({ "paginate:rest.pulls.listReviews": [COPILOT_REVIEW] });
+
+  await dispatch("pull_request.synchronize", reviewedPrContext({ octokit }));
+  await flushDebounce(t);
+
+  assert.deepEqual(octokit.calls.map((c) => c.method), ["graphql", "rest.repos.createCommitStatus"]);
+});
+
+test("threads are attributed to the bot by author id, whatever the login", async (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  const { app, dispatch } = makeApp();
+  register(app);
+  const copilotInline = { __typename: "Bot", login: "Copilot", databaseId: 99 };
+  const thread = (totalCount, extra = {}) => ({
+    isResolved: false, isOutdated: false, comments: { totalCount, nodes: [{ author: copilotInline }] }, ...extra,
+  });
+  const octokit = makeOctokit({
+    "paginate:rest.pulls.listReviews": [COPILOT_REVIEW],
+    threads: [thread(1), thread(2), thread(1, { isResolved: true })],
+  });
+
+  await dispatch("pull_request.synchronize", reviewedPrContext({ octokit }));
+  await flushDebounce(t);
+
+  assert.match(statusCalls(octokit)[0].args.description, /Reviewed by Copilot \(2\/3 acknowledged\)/);
+});
+
+test("a repeated skip status is neither re-read nor rewritten", async (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  const { app, dispatch } = makeApp();
+  register(app);
+  const octokit = makeOctokit();
+  const context = makeContext({
+    octokit,
+    config: { ai_review: { skip_label: "skip-ai-review" } },
+    payload: { pull_request: { number: 1, state: "open", head: { sha: "skip1" }, user: { login: "david", type: "User" }, labels: [{ name: "skip-ai-review" }] } },
+  });
+
+  await dispatch("pull_request.opened", context);
+  await flushDebounce(t);
+  await dispatch("pull_request.edited", context);
+  await dispatch("pull_request.synchronize", context);
+  await flushDebounce(t);
+
+  assert.deepEqual(octokit.calls.map((c) => c.method), ["rest.repos.createCommitStatus"]);
+});
+
+test("removing the skip label still flips pending then back to the review result", async (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  const { app, dispatch } = makeApp();
+  register(app);
+  const octokit = makeOctokit({ "paginate:rest.pulls.listReviews": [COPILOT_REVIEW] });
+  const pull_request = { number: 7, state: "open", head: { sha: "label1" }, user: { login: "david", type: "User" }, labels: [], additions: 50, deletions: 5 };
+  const context = makeContext({
+    octokit,
+    config: { ai_review: { skip_label: "skip-ai-review" } },
+    payload: { pull_request, label: { name: "skip-ai-review" } },
+  });
+
+  await dispatch("pull_request.synchronize", context);
+  await flushDebounce(t);
+  await dispatch("pull_request.unlabeled", context);
+  await flushDebounce(t);
+
+  assert.deepEqual(statusCalls(octokit).map((c) => c.args.state), ["success", "pending", "success"]);
+});
+
+test("a commit we already posted to skips the self-heal lookup", async (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  const { app, dispatch } = makeApp();
+  register(app);
+  const octokit = makeOctokit({ "paginate:rest.pulls.listReviews": [COPILOT_REVIEW] });
+  const context = reviewedPrContext({ octokit, sha: "posted1" });
+
+  await dispatch("pull_request.synchronize", context);
+  await flushDebounce(t);
+  await dispatch("status", makeContext({ octokit, repo: context.repo().repo, payload: { sha: "posted1", state: "success", context: "buildkite/app" } }));
+
+  assert.equal(octokit.calls.some((c) => c.method === "rest.repos.getCombinedStatusForRef"), false);
 });
 
 test("a completed Actions check run also heals a missing status", async (t) => {
