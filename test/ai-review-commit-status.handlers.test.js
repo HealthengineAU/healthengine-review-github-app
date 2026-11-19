@@ -1392,3 +1392,39 @@ test("pending CI and our own status don't trigger a heal check", async (t) => {
 
   assert.equal(octokit.calls.length, 0);
 });
+
+test("a completed Actions check run also heals a missing status", async (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  const { app, dispatch } = makeApp();
+  register(app);
+  const octokit = makeOctokit({
+    "paginate:rest.pulls.listReviews": [COPILOT_REVIEW],
+    "rest.repos.listPullRequestsAssociatedWithCommit": {
+      data: [{ number: 7, state: "open", head: { sha: "abc123" }, user: { login: "david", type: "User" }, labels: [], additions: 50, deletions: 5 }],
+    },
+  });
+
+  await dispatch("check_run.completed", makeContext({ octokit, payload: { check_run: { head_sha: "abc123" } } }));
+  await flushDebounce(t);
+
+  assert.match(statusCalls(octokit)[0].args.description, /Reviewed by Copilot/);
+});
+
+test("a failed heal lookup leaves the commit open to a later retry", async (t) => {
+  const { app, dispatch } = makeApp();
+  register(app);
+  let fail = true;
+  const octokit = makeOctokit({
+    "rest.repos.getCombinedStatusForRef": () => {
+      if (fail) throw Object.assign(new Error("secondary rate limit"), { status: 403 });
+      return { data: { statuses: [{ context: "AI Review", state: "success" }] } };
+    },
+  });
+  const context = ciStatusContext({ octokit });
+
+  await assert.rejects(dispatch("status", context));
+  fail = false;
+  await dispatch("status", context);
+
+  assert.equal(octokit.calls.filter((c) => c.method === "rest.repos.getCombinedStatusForRef").length, 2);
+});
