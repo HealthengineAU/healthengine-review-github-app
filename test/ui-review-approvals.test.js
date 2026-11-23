@@ -91,20 +91,20 @@ test("uiReviewStatus leads with outstanding code owners and ends with the acknow
   const reece = { approval: { by: "reececomo", name: "Reece Como" } };
   const jarvis = [["@acme/jarvis"]];
 
-  assert.deepEqual(status({ review: { approval: null } }), { state: "pending", description: "3 modified - 🟡 Changes awaiting acknowledgement", target_url: tool.target_url });
+  assert.deepEqual(status({ review: { approval: null } }), { state: "pending", description: "3 modified - ⏳ Changes awaiting acknowledgement", target_url: tool.target_url });
   assert.deepEqual(status({ review: reece }), { state: "success", description: "3 modified - ✅ Changes acknowledged", target_url: tool.target_url });
-  assert.equal(status({ review: reece, owners: { pending: jarvis, approved: [] } }).description, "🟡 Awaiting PR approvals: Jarvis - 3 modified - ✅ Changes acknowledged");
+  assert.equal(status({ review: reece, owners: { pending: jarvis, approved: [] } }).description, "⏳ Awaiting PR approvals: Jarvis - 3 modified - ✅ Changes acknowledged");
   assert.equal(
     status({ review: { approval: null }, owners: { pending: [["@acme/jarvis"], ["@reececomo"]], approved: [] } }).description,
-    "🟡 Awaiting PR approvals: Jarvis, reececomo - 3 modified - 🟡 Changes awaiting acknowledgement",
+    "⏳ Awaiting PR approvals: Jarvis, reececomo - 3 modified - ⏳ Changes awaiting acknowledgement",
   );
   assert.equal(
     status({ review: { approval: null }, owners: { pending: [["@acme/marketplace"], ["@acme/marketplace", "@acme/pingu"], ["@acme/Pingu"]], approved: [] } }).description,
-    "🟡 Awaiting PR approvals: Marketplace, Pingu - 3 modified - 🟡 Changes awaiting acknowledgement",
+    "⏳ Awaiting PR approvals: Marketplace, Pingu - 3 modified - ⏳ Changes awaiting acknowledgement",
   );
   assert.equal(
     status({ review: reece, owners: { pending: [["@acme/marketplace", "@acme/pingu"]], approved: [["@acme/pingu"], ["@acme/pingu", "@acme/jarvis"]] } }).description,
-    "🟡 Awaiting PR approvals: Marketplace/Pingu - 3 modified - ✅ Changes acknowledged",
+    "⏳ Awaiting PR approvals: Marketplace/Pingu - 3 modified - ✅ Changes acknowledged",
   );
   assert.deepEqual(status({ review: reece, owners: { pending: [], approved: [["@acme/marketplace", "@acme/patient-accounts"]] } }), {
     state: "success",
@@ -114,7 +114,7 @@ test("uiReviewStatus leads with outstanding code owners and ends with the acknow
 
   const done = { state: "success", description: "3 modified", target_url: "https://v" };
   assert.deepEqual(uiReviewStatus(done, { review: null, owners: { pending: jarvis, approved: [] } }), {
-    state: "pending", description: "🟡 Awaiting PR approvals: Jarvis - 3 modified", target_url: "https://v",
+    state: "pending", description: "⏳ Awaiting PR approvals: Jarvis - 3 modified", target_url: "https://v",
   });
   assert.deepEqual(uiReviewStatus(done, { review: null, owners: { pending: [], approved: jarvis } }), done);
   assert.deepEqual(uiReviewStatus(done, { review: null, owners: null }), done);
@@ -124,14 +124,22 @@ test("uiReviewStatus stays within 140 chars", () => {
   const tool = { state: "pending", description: "B".repeat(200), target_url: "https://v" };
   const long = uiReviewStatus(tool, { review: { approval: null }, owners: { pending: [["@acme/jarvis"]], approved: [] } }).description;
   assert.equal(long.length, 140);
-  assert.ok(long.startsWith("🟡 Awaiting PR approvals: Jarvis - BBB"));
-  assert.ok(long.endsWith("B… - 🟡 Changes awaiting acknowledgement"));
+  assert.ok(long.startsWith("⏳ Awaiting PR approvals: Jarvis - BBB"));
+  assert.ok(long.endsWith("B… - ⏳ Changes awaiting acknowledgement"));
 
   const owners = { pending: Array.from({ length: 20 }, (_, i) => [`@acme/team-${i}`]), approved: [] };
   const crowded = uiReviewStatus(tool, { review: { approval: { by: "x" } }, owners }).description;
   assert.equal(crowded.length, 140);
-  assert.ok(crowded.startsWith("🟡 Awaiting PR approvals: Team 0, "));
+  assert.ok(crowded.startsWith("⏳ Awaiting PR approvals: Team 0, "));
   assert.ok(crowded.endsWith("… - ✅ Changes acknowledged"));
+});
+
+test("uiReviewStatus avoids 4-byte characters, which GitHub rejects in status descriptions", () => {
+  const tool = { state: "pending", description: "3 modified", target_url: "https://v" };
+  const pending = { pending: [["@acme/jarvis"]], approved: [] };
+  for (const review of [{ approval: null }, { approval: { by: "x" } }]) {
+    assert.doesNotMatch(uiReviewStatus(tool, { review, owners: pending }).description, /[\u{10000}-\u{10FFFF}]/u);
+  }
 });
 
 test("withOwnersStatus tabulates owners with filtered shortcuts under the checkbox", async () => {
