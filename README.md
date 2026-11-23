@@ -79,7 +79,7 @@
 
 - Approves UI changes by checkbox (`UI Review` / `UI Review (<suite>)` statuses from
   found-pixel, when it posts `pending` with `fp=` in the URL):
-  - Rewrites the status to `… - 🟡 Changes awaiting acknowledgement`, still linking to found-pixel's viewer, and adds
+  - Rewrites the status to `… - ⏳ Changes awaiting acknowledgement`, still linking to found-pixel's viewer, and adds
     a **Changes acknowledged** checkbox under a divider at the bottom of found-pixel's PR comment
     (the one with the same fingerprint) if found-pixel hasn't
   - Ticking it rewrites the line to `~Changes acknowledged~ - Acknowledged by @<login>`, stamps the
@@ -90,12 +90,12 @@
   - Lists each affected story owner below the checkbox (🟡 PR approval needed / ✅ PR approved by
     @login), with UI Review and Storybook links filtered to that owner
   - Unticking puts the original checkbox back, removes the stamp and puts the approved
-    statuses back to `… - 🟡 Changes awaiting acknowledgement`
+    statuses back to `… - ⏳ Changes awaiting acknowledgement`
   - The app recognises its own statuses by their description's prefix or suffix and acts only
     on the latest status for a context, so replayed or stale events are ignored
 - Requires code owner approval of UI changes, when found-pixel's `codeowners` is on (its comment
   carries `<!-- ui-owners @org/team @org/a,@org/b … -->`, one CODEOWNERS entry per space):
-  - Holds `UI Review` pending (`🟡 Awaiting PR approvals: Pingu, Jarvis - …`)
+  - Holds `UI Review` pending (`⏳ Awaiting PR approvals: Pingu, Jarvis - …`)
     until each entry has an approving PR review, at any point and even if dismissed since,
     from a member of one of its teams (or the user it names)
   - Entries the PR author belongs to don't need approving
